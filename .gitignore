@@ -1,0 +1,19 @@
+# Build / artefatos
+target/
+node_modules/
+dist/
+storage/
+
+# Logs e IDE
+*.log
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Segredos (nunca commitar)
+.env
+.env.*
+!.env.example
+*.pem
+*.key

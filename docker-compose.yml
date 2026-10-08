@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ged-postgres
+    environment:
+      POSTGRES_DB: ged
+      POSTGRES_USER: ged
+      POSTGRES_PASSWORD: ged
+    ports:
+      - "5432:5432"
+    volumes:
+      - ged-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ged -d ged"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: ged-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms256m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - ged-esdata:/usr/share/elasticsearch/data
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: ged-onlyoffice
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${GED_JWT_SECRET:-troque-este-segredo-em-producao-com-no-minimo-32-caracteres}
+    ports:
+      - "8090:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  ged-pgdata:
+  ged-esdata:

@@ -1,0 +1,35 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${GED_DB_HOST:localhost}:${GED_DB_PORT:5432}/${GED_DB_NAME:ged}
+    username: ${GED_DB_USER:ged}
+    password: ${GED_DB_PASSWORD:ged}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+
+server:
+  port: 8080
+
+ged:
+  storage-dir: ${GED_STORAGE_DIR:storage}
+  jwt:
+    secret: ${GED_JWT_SECRET:troque-este-segredo-em-producao-com-no-minimo-32-caracteres}
+    expiration-minutes: ${GED_JWT_EXPIRATION_MINUTES:720}
+  seed:
+    admin-username: ${GED_SEED_ADMIN_USERNAME:admin}
+    admin-password: ${GED_SEED_ADMIN_PASSWORD:admin123}
+  elasticsearch:
+    enabled: ${GED_ES_ENABLED:true}
+    uris: ${GED_ES_URL:http://localhost:9200}
+  editor:
+    document-server-url: ${GED_EDITOR_URL:http://localhost:8090}
+    public-backend-url: ${GED_EDITOR_PUBLIC_BACKEND_URL:http://host.docker.internal:8080}
+
+logging:
+  level:
+    br.com.ged: INFO

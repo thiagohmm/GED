@@ -52,12 +52,15 @@ class WorkflowServiceTest {
     @Mock
     private DocumentStatusHistoryService statusHistoryService;
 
+    @Mock
+    private br.com.ged.tenant.TenantScope tenantScope;
+
     private WorkflowService workflowService;
     private Document document;
 
     @BeforeEach
     void setUp() {
-        workflowService = new WorkflowService(documentRepository, reviewService, roleChecker, statusHistoryService);
+        workflowService = new WorkflowService(documentRepository, reviewService, roleChecker, statusHistoryService, tenantScope);
         Folder pasta = new Folder("Contratos", null, "admin");
         pasta.setId(1L);
         document = new Document(pasta, "peticao.docx", DocumentKind.WORD, "admin");

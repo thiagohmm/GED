@@ -20,8 +20,8 @@ export async function listProjects() {
   return data;
 }
 
-export async function createProject(name) {
-  const { data } = await api.post("/projects", { name });
+export async function createProject(name, officeId) {
+  const { data } = await api.post("/projects", { name, officeId: officeId ?? undefined });
   return data;
 }
 
@@ -168,5 +168,29 @@ export async function createUser(payload) {
 
 export async function updateUser(id, payload) {
   const { data } = await api.patch(`/users/${id}`, payload);
+  return data;
+}
+
+export async function listOffices() {
+  const { data } = await api.get("/admin/offices");
+  return data;
+}
+
+export async function createOffice(name) {
+  const { data } = await api.post("/admin/offices", { name });
+  return data;
+}
+
+export async function updateOffice(id, payload) {
+  const { data } = await api.patch(`/admin/offices/${id}`, payload);
+  return data;
+}
+
+export async function deleteOffice(id) {
+  await api.delete(`/admin/offices/${id}`);
+}
+
+export async function createOfficeAdmin(officeId, username, password) {
+  const { data } = await api.post(`/admin/offices/${officeId}/admin`, { username, password });
   return data;
 }

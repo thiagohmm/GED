@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { canManageUsers, canReview } from "../pages/model";
+import { canManageOffices, canManageUsers, canReview } from "../pages/model";
 import { useState } from "react";
 import { PasswordModal } from "./PasswordModal";
 import { changeOwnPassword } from "../api/ged";
@@ -49,6 +49,7 @@ export function AppFrame({ children }) {
           <NavLink to="/" className="nav-link" end>Documentos</NavLink>
           {canReview(user.role) && <NavLink to="/reviews" className="nav-link">Revisões</NavLink>}
           {canManageUsers(user.role) && <NavLink to="/admin/users" className="nav-link">Usuários</NavLink>}
+          {canManageOffices(user.role) && <NavLink to="/admin/offices" className="nav-link">Escritórios</NavLink>}
         </nav>
 
         <div className="rail-foot">
@@ -56,7 +57,7 @@ export function AppFrame({ children }) {
             <span className="avatar">{user.username.charAt(0)}</span>
             <span className="nav-user-text">
               <strong>{user.username}</strong>
-              <small>{roleLabel(user.role)}</small>
+              <small>{roleLabel(user.role)}{user.role === "SUPER_ADMIN" ? " · todos os escritórios" : ""}</small>
             </span>
           </div>
           <div className="rail-foot-actions">
@@ -103,6 +104,7 @@ export function AppFrame({ children }) {
 
 function roleLabel(role) {
   const labels = {
+    SUPER_ADMIN: "Admin global",
     ADMIN: "Administração",
     PROTOCOLADOR: "Protocolo",
     ADVOGADO: "Advocacia",

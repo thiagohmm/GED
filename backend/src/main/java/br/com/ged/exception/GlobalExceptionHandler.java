@@ -1,5 +1,7 @@
 package br.com.ged.exception;
 
+import br.com.ged.audit.AuditEventService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -17,8 +19,15 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private final AuditEventService auditEventService;
+
+    public GlobalExceptionHandler(AuditEventService auditEventService) {
+        this.auditEventService = auditEventService;
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException exception) {
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException exception, HttpServletRequest request) {
+        auditEventService.record("ACCESS_DENIED", "REQUEST", request == null ? null : request.getRequestURI(), null);
         return buildResponse(HttpStatus.FORBIDDEN,
                 exception.getMessage() == null ? "Acesso negado." : exception.getMessage());
     }

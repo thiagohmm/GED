@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import br.com.ged.document.DocumentResponse;
+import br.com.ged.config.AuthenticatedUser;
 
 import java.util.List;
 
@@ -22,7 +23,7 @@ public class ReviewController {
     private final ReviewService reviewService;
 
     @GetMapping("/api/reviews/queue")
-    @PreAuthorize("hasAnyRole('REVISOR','ADMIN')")
+    @PreAuthorize("hasAnyRole('REVISOR','ADMIN','SUPER_ADMIN')")
     public ReviewQueueResponse queue() {
         return reviewService.queue();
     }
@@ -35,16 +36,16 @@ public class ReviewController {
     @PostMapping("/api/reviews/{id}/comments")
     @ResponseStatus(HttpStatus.CREATED)
     public ReviewCommentResponse addComment(@PathVariable Long id, @Valid @RequestBody AddCommentRequest request,
-                                            @AuthenticationPrincipal String username) {
-        return reviewService.addComment(id, request, username);
+                                            @AuthenticationPrincipal AuthenticatedUser actor) {
+        return reviewService.addComment(id, request, actor.username());
     }
 
     @PostMapping("/api/reviews/{id}/decide")
-    @PreAuthorize("hasAnyRole('REVISOR','ADMIN')")
+    @PreAuthorize("hasAnyRole('REVISOR','ADMIN','SUPER_ADMIN')")
     public DocumentResponse decide(@PathVariable Long id,
                                    @Valid @RequestBody DecideReviewRequest request,
-                                   @AuthenticationPrincipal String username) {
-        return reviewService.decide(id, request, username);
+                                   @AuthenticationPrincipal AuthenticatedUser actor) {
+        return reviewService.decide(id, request, actor.username());
     }
 
     @GetMapping("/api/documents/{documentId}/reviews")

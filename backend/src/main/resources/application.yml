@@ -1,11 +1,15 @@
 spring:
+  profiles:
+    default: dev
   datasource:
     url: jdbc:postgresql://${GED_DB_HOST:localhost}:${GED_DB_PORT:5432}/${GED_DB_NAME:ged}
     username: ${GED_DB_USER:ged}
     password: ${GED_DB_PASSWORD:ged}
+  flyway:
+    enabled: true
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     open-in-view: false
   servlet:
     multipart:
@@ -18,17 +22,27 @@ server:
 ged:
   storage-dir: ${GED_STORAGE_DIR:storage}
   jwt:
-    secret: ${GED_JWT_SECRET:troque-este-segredo-em-producao-com-no-minimo-32-caracteres}
     expiration-minutes: ${GED_JWT_EXPIRATION_MINUTES:720}
   seed:
-    admin-username: ${GED_SEED_ADMIN_USERNAME:admin}
-    admin-password: ${GED_SEED_ADMIN_PASSWORD:admin123}
+    enabled: false
   elasticsearch:
     enabled: ${GED_ES_ENABLED:true}
     uris: ${GED_ES_URL:http://localhost:9200}
   editor:
     document-server-url: ${GED_EDITOR_URL:http://localhost:8090}
     public-backend-url: ${GED_EDITOR_PUBLIC_BACKEND_URL:http://host.docker.internal:8080}
+  backup:
+    dir: ${GED_BACKUP_DIR:backups}
+    pg-bin-dir: ${GED_PGBIN_DIR:}
+    maintenance-db: ${GED_DB_MAINTENANCE_NAME:postgres}
+    pg-host: ${GED_DB_HOST:localhost}
+    pg-port: ${GED_DB_PORT:5432}
+    pg-database: ${GED_DB_NAME:ged}
+    pg-user: ${GED_DB_USER:ged}
+    pg-password: ${GED_DB_PASSWORD:ged}
+  # Modo CLI (fora do web): backup | restore | verify; tambem via --ged.cli=...
+  cli: ${GED_CLI:}
+  cli-path: ${GED_CLI_PATH:}
 
 logging:
   level:

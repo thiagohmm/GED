@@ -36,11 +36,15 @@ export function isExcelOrWord(kind) {
 }
 
 export function canManageUsers(role) {
-  return role === "ADMIN" || role === "PROTOCOLADOR";
+  return role === "ADMIN" || role === "SUPER_ADMIN";
 }
 
 export function canReview(role) {
-  return role === "REVISOR" || role === "ADMIN";
+  return role === "REVISOR" || role === "ADMIN" || role === "SUPER_ADMIN";
+}
+
+export function canManageOffices(role) {
+  return role === "SUPER_ADMIN";
 }
 
 export const ALL_STATUSES = Object.keys(STATUS_LABELS);

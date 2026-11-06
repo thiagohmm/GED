@@ -1,5 +1,6 @@
 package br.com.ged.review;
 
+import br.com.ged.audit.AuditEventService;
 import br.com.ged.document.Document;
 import br.com.ged.document.DocumentKind;
 import br.com.ged.document.DocumentResponse;
@@ -56,13 +57,19 @@ class ReviewServiceTest {
     @Mock
     private DocumentStatusHistoryService statusHistoryService;
 
+    @Mock
+    private br.com.ged.tenant.TenantScope tenantScope;
+
+    @Mock
+    private AuditEventService auditEventService;
+
     private ReviewService reviewService;
     private Document document;
 
     @BeforeEach
     void setUp() {
         reviewService = new ReviewService(reviewRepository, commentRepository, documentRepository,
-                folderService, roleChecker, statusHistoryService);
+                folderService, roleChecker, statusHistoryService, tenantScope, auditEventService);
         Folder pasta = new Folder("Contratos", null, "admin");
         pasta.setId(PASTA_ID);
         document = new Document(pasta, "peticao.docx", DocumentKind.WORD, "maria");
@@ -70,6 +77,7 @@ class ReviewServiceTest {
         document.setStatus(DocumentStatus.EM_REVISAO);
         document.setCurrentVersion(2);
         when(folderService.pathOf(PASTA_ID)).thenReturn("Contratos");
+        when(tenantScope.canAccessReview(any())).thenReturn(true);
     }
 
     @Test

@@ -27,7 +27,7 @@ public class ProjectController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN','PROTOCOLADOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','PROTOCOLADOR','SUPER_ADMIN')")
     public ProjectResponse create(@Valid @RequestBody ProjectRequest request) {
         return projectService.create(request);
     }

@@ -3,6 +3,7 @@ target/
 node_modules/
 dist/
 storage/
+backups/
 
 # Logs e IDE
 *.log

@@ -1,0 +1,9 @@
+# Perfil de desenvolvimento (default). Segredos fracos sao permitidos APENAS aqui.
+ged:
+  jwt:
+    secret: ${GED_JWT_SECRET:troque-este-segredo-em-producao-com-no-minimo-32-caracteres}
+  seed:
+    enabled: true
+    admin-username: ${GED_SEED_ADMIN_USERNAME:admin}
+    admin-password: ${GED_SEED_ADMIN_PASSWORD:admin123}
+    office-name: ${GED_SEED_OFFICE_NAME:Escritorio Dev}

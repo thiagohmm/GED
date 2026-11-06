@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import br.com.ged.config.AuthenticatedUser;
 import br.com.ged.workflow.WorkflowService;
 import jakarta.validation.Valid;
 
@@ -43,8 +44,8 @@ public class DocumentController {
     public DocumentResponse upload(@PathVariable Long folderId,
                                    @RequestParam("file") MultipartFile file,
                                    @RequestParam(value = "changeDescription", required = false) String changeDescription,
-                                   @AuthenticationPrincipal String username) {
-        return workflowService.withTransitionOptions(documentService.upload(folderId, file, changeDescription, username));
+                                   @AuthenticationPrincipal AuthenticatedUser actor) {
+        return workflowService.withTransitionOptions(documentService.upload(folderId, file, changeDescription, actor.username()));
     }
 
     @GetMapping("/folders/{folderId}/documents")
@@ -72,9 +73,9 @@ public class DocumentController {
     @PostMapping("/documents/{id}/status")
     public DocumentResponse changeStatus(@PathVariable Long id,
                                          @Valid @RequestBody StatusChangeRequest request,
-                                         @AuthenticationPrincipal String username) {
+                                         @AuthenticationPrincipal AuthenticatedUser actor) {
         return workflowService.withTransitionOptions(
-                workflowService.requestStatusChange(id, request.to(), request.note(), username));
+                workflowService.requestStatusChange(id, request.to(), request.note(), actor.username()));
     }
 
     @GetMapping("/documents/{id}/versions")

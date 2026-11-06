@@ -9,6 +9,7 @@ import br.com.ged.exception.BusinessException;
 import br.com.ged.exception.NotFoundException;
 import br.com.ged.review.Review;
 import br.com.ged.review.ReviewService;
+import br.com.ged.tenant.TenantScope;
 import br.com.ged.user.Role;
 import br.com.ged.user.RoleChecker;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class WorkflowService {
     private final ReviewService reviewService;
     private final RoleChecker roleChecker;
     private final DocumentStatusHistoryService statusHistoryService;
+    private final TenantScope tenantScope;
 
     public List<DocumentStatus> allowedTargetsOf(DocumentStatus from) {
         return switch (from) {
@@ -56,6 +58,7 @@ public class WorkflowService {
     public DocumentResponse requestStatusChange(Long documentId, DocumentStatus to, String note, String username) {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new NotFoundException("Documento nao encontrado."));
+        tenantScope.requireAccessToDocument(document);
         DocumentStatus from = document.getStatus();
         if (from == DocumentStatus.EM_REVISAO) {
             throw new BusinessException(REVIEW_EXIT_MESSAGE);
@@ -86,8 +89,8 @@ public class WorkflowService {
 
     private Set<Role> requiredRolesFor(DocumentStatus from, DocumentStatus to) {
         return switch (from) {
-            case PRONTO_PARA_PROTOCOLO -> Set.of(Role.PROTOCOLADOR, Role.ADMIN);
-            case PROTOCOLADO -> Set.of(Role.REVISOR, Role.ADMIN);
+            case PRONTO_PARA_PROTOCOLO -> Set.of(Role.PROTOCOLADOR, Role.ADMIN, Role.SUPER_ADMIN);
+            case PROTOCOLADO -> Set.of(Role.REVISOR, Role.ADMIN, Role.SUPER_ADMIN);
             default -> Set.of();
         };
     }

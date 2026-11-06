@@ -1,5 +1,6 @@
 package br.com.ged.document;
 
+import br.com.ged.audit.AuditEventService;
 import br.com.ged.diff.DiffCalculator;
 import br.com.ged.diff.DiffType;
 import br.com.ged.diff.ExcelTextExtractor;
@@ -79,6 +80,12 @@ class DocumentServiceTest {
     @Mock
     private DocumentStatusChangeRepository statusChangeRepository;
 
+    @Mock
+    private br.com.ged.tenant.TenantScope tenantScope;
+
+    @Mock
+    private AuditEventService auditEventService;
+
     @TempDir
     Path tempDir;
 
@@ -97,7 +104,9 @@ class DocumentServiceTest {
                 new ObjectMapper(),
                 new NoopIndexingService(),
                 reviewRepository,
-                statusChangeRepository);
+                statusChangeRepository,
+                tenantScope,
+                auditEventService);
         folder = new Folder("Contratos", null, "admin");
         folder.setId(PASTA_ID);
         when(folderService.findById(PASTA_ID)).thenReturn(folder);

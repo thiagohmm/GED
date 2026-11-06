@@ -1,0 +1,15 @@
+# Perfil de producao: sem defaults para segredos/senhas.
+#  - GED_JWT_SECRET e obrigatoria (>= 32 chars; o secret do dev e rejeitado).
+#  - Se nao existir SUPER_ADMIN, GED_SUPER_ADMIN_USERNAME e GED_SUPER_ADMIN_PASSWORD sao obrigatorias.
+#  - O seed do dev (admin/admin123) nunca roda aqui.
+spring:
+  flyway:
+    enabled: true
+
+ged:
+  jwt:
+    secret: ${GED_JWT_SECRET:}
+  seed:
+    enabled: false
+    super-admin-username: ${GED_SUPER_ADMIN_USERNAME:}
+    super-admin-password: ${GED_SUPER_ADMIN_PASSWORD:}

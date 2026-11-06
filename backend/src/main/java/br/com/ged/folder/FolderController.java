@@ -2,6 +2,7 @@ package br.com.ged.folder;
 
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import br.com.ged.config.AuthenticatedUser;
 
 import java.util.List;
 
@@ -33,11 +35,12 @@ public class FolderController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public FolderNode create(@Valid @RequestBody CreateFolderRequest request,
-                             @AuthenticationPrincipal String username) {
-        return folderService.create(request, username);
+                             @AuthenticationPrincipal AuthenticatedUser actor) {
+        return folderService.create(request, actor.username());
     }
 
     @PatchMapping("/{id}/move")
+    @PreAuthorize("hasAnyRole('ADMIN','PROTOCOLADOR','SUPER_ADMIN')")
     public FolderNode move(@PathVariable Long id, @Valid @RequestBody MoveFolderRequest request) {
         return folderService.moveFolder(id, request.targetFolderId());
     }
@@ -54,6 +57,7 @@ public class FolderController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyRole('ADMIN','PROTOCOLADOR','SUPER_ADMIN')")
     public void delete(@PathVariable Long id) {
         folderService.delete(id);
     }

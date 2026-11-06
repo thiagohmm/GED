@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import br.com.ged.config.AuthenticatedUser;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -28,8 +29,8 @@ public class DocumentEditorController {
     @GetMapping("/documents/{id}/config")
     public EditorConfigResponse config(@PathVariable Long id,
                                        @RequestParam(defaultValue = "view") String mode,
-                                       @AuthenticationPrincipal String username) {
-        return editorService.config(id, username, mode);
+                                       @AuthenticationPrincipal AuthenticatedUser actor) {
+        return editorService.config(id, actor, mode);
     }
 
     @GetMapping("/versions/{versionId}/file")

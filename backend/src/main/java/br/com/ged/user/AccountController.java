@@ -1,5 +1,6 @@
 package br.com.ged.user;
 
+import br.com.ged.config.AuthenticatedUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -19,8 +20,8 @@ public class AccountController {
 
     @PatchMapping("/password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void changePassword(@AuthenticationPrincipal String username,
+    public void changePassword(@AuthenticationPrincipal AuthenticatedUser actor,
                                @Valid @RequestBody ChangePasswordRequest request) {
-        userService.changeOwnPassword(username, request);
+        userService.changeOwnPassword(actor.username(), request);
     }
 }

@@ -1,5 +1,6 @@
 package br.com.ged.folder;
 
+import br.com.ged.audit.AuditEventService;
 import br.com.ged.document.Document;
 import br.com.ged.document.DocumentRepository;
 import br.com.ged.document.DocumentVersion;
@@ -9,6 +10,7 @@ import br.com.ged.exception.NotFoundException;
 import br.com.ged.project.Project;
 import br.com.ged.project.ProjectRepository;
 import br.com.ged.search.SearchGateway;
+import br.com.ged.tenant.TenantScope;
 import br.com.ged.user.Role;
 import br.com.ged.user.RoleChecker;
 import br.com.ged.user.User;
@@ -33,21 +35,29 @@ public class FolderService {
     private final UserRepository userRepository;
     private final RoleChecker roleChecker;
     private final SearchGateway searchGateway;
+    private final TenantScope tenantScope;
+    private final AuditEventService auditEventService;
 
     public FolderService(FolderRepository folderRepository, DocumentRepository documentRepository,
                          ProjectRepository projectRepository, UserRepository userRepository,
-                         RoleChecker roleChecker, SearchGateway searchGateway) {
+                         RoleChecker roleChecker, SearchGateway searchGateway, TenantScope tenantScope,
+                         AuditEventService auditEventService) {
         this.folderRepository = folderRepository;
         this.documentRepository = documentRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.roleChecker = roleChecker;
         this.searchGateway = searchGateway;
+        this.tenantScope = tenantScope;
+        this.auditEventService = auditEventService;
     }
 
     @Transactional
     public FolderNode create(CreateFolderRequest request, String username) {
         Folder parent = resolveParent(request.parentId());
+        if (parent != null) {
+            tenantScope.requireAccessToFolder(parent);
+        }
         String name = normalizeName(request.name());
         rejectDuplicateName(name, parent);
         Folder folder = new Folder(name, parent, username);
@@ -58,21 +68,27 @@ public class FolderService {
             }
             Project project = projectRepository.findById(request.projectId())
                     .orElseThrow(() -> new NotFoundException("Projeto nao encontrado."));
+            tenantScope.requireAccessToProject(project);
             User attorney = userRepository.findById(request.assignedAttorneyId())
                     .orElseThrow(() -> new NotFoundException("Advogado nao encontrado."));
             if (attorney.getRole() != Role.ADVOGADO || !attorney.isEnabled()) {
                 throw new BusinessException("Selecione um advogado ativo.");
             }
+            requireSameOffice(project, attorney);
             folder.setProject(project);
             folder.setAssignedAttorney(attorney);
         }
         Folder saved = folderRepository.save(folder);
+        auditEventService.record("FOLDER_CREATE", "FOLDER", String.valueOf(saved.getId()),
+                AuditEventService.details("name", saved.getName(), "parentId",
+                        saved.getParent() == null ? null : saved.getParent().getId()));
         return toNode(saved);
     }
 
     @Transactional
     public FolderNode rename(Long id, RenameFolderRequest request) {
         Folder folder = findById(id);
+        tenantScope.requireAccessToFolder(folder);
         String name = normalizeName(request.name());
         rejectDuplicateName(name, folder.getParent(), folder.getId());
         folder.setName(name);
@@ -84,6 +100,8 @@ public class FolderService {
     public FolderNode moveFolder(Long id, Long targetFolderId) {
         Folder folder = findById(id);
         Folder target = findById(targetFolderId);
+        tenantScope.requireAccessToFolder(folder);
+        tenantScope.requireAccessToFolder(target);
         if (folder.getId().equals(target.getId())) {
             throw new BusinessException("Nao e possivel mover a pasta para dentro de si mesma.");
         }
@@ -125,16 +143,19 @@ public class FolderService {
     public FolderNode assignRoot(Long id, AssignRootFolderRequest request) {
         roleChecker.requireAny(java.util.Set.of(Role.ADMIN, Role.PROTOCOLADOR));
         Folder folder = findById(id);
+        tenantScope.requireAccessToFolder(folder);
         if (folder.getParent() != null) {
             throw new BusinessException("Projeto e advogado sao definidos na pasta raiz.");
         }
         Project project = projectRepository.findById(request.projectId())
                 .orElseThrow(() -> new NotFoundException("Projeto nao encontrado."));
+        tenantScope.requireAccessToProject(project);
         User attorney = userRepository.findById(request.assignedAttorneyId())
                 .orElseThrow(() -> new NotFoundException("Advogado nao encontrado."));
         if (attorney.getRole() != Role.ADVOGADO || !attorney.isEnabled()) {
             throw new BusinessException("Selecione um advogado ativo.");
         }
+        requireSameOffice(project, attorney);
         folder.setProject(project);
         folder.setAssignedAttorney(attorney);
         return toNode(folder);
@@ -143,12 +164,15 @@ public class FolderService {
     @Transactional
     public void delete(Long id) {
         Folder folder = findById(id);
+        tenantScope.requireAccessToFolder(folder);
         if (folderRepository.existsByParentId(id)) {
             throw new ConflictException("A pasta possui subpastas. Exclua as subpastas primeiro.");
         }
         if (documentRepository.existsByFolderId(id)) {
             throw new ConflictException("A pasta possui documentos. Exclua os documentos primeiro.");
         }
+        auditEventService.record("FOLDER_DELETE", "FOLDER", String.valueOf(folder.getId()),
+                AuditEventService.details("name", folder.getName()));
         folderRepository.delete(folder);
     }
 
@@ -162,6 +186,7 @@ public class FolderService {
         folders.forEach(folder -> linkToParent(nodes, folder));
         return nodes.values().stream()
                 .filter(node -> node.parentId() == null)
+                .filter(node -> tenantScope.canAccessOffice(officeOfNodeId(node.id()).orElse(null)))
                 .toList();
     }
 
@@ -178,6 +203,20 @@ public class FolderService {
             names.addFirst(step.getName());
         }
         return String.join(" / ", names);
+    }
+
+    private void requireSameOffice(Project project, User attorney) {
+        if (attorney.getOfficeId() == null || !project.getOfficeId().equals(attorney.getOfficeId())) {
+            throw new BusinessException("O advogado precisa pertencer ao mesmo escritorio do projeto.");
+        }
+    }
+
+    private Optional<Long> officeOfNodeId(Long folderId) {
+        Folder folder = folderRepository.findById(folderId).orElse(null);
+        if (folder == null) {
+            return Optional.empty();
+        }
+        return tenantScope.officeOfFolder(folder);
     }
 
     private Folder resolveParent(Long parentId) {

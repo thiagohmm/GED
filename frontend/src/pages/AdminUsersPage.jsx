@@ -1,13 +1,18 @@
-import { createUser, listUsers, updateUser } from "../api/ged";
+import { createUser, listOffices, listUsers, updateUser } from "../api/ged";
 import { apiErrorMessage } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { useEffect, useState } from "react";
 import { PasswordModal } from "../components/PasswordModal";
 
 export function AdminUsersPage() {
+  const { user: actor } = useAuth();
+  const isSuperAdmin = actor?.role === "SUPER_ADMIN";
+  const [offices, setOffices] = useState([]);
   const [users, setUsers] = useState([]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("ADVOGADO");
+  const [officeId, setOfficeId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [resetUser, setResetUser] = useState(null);
@@ -17,6 +22,11 @@ export function AdminUsersPage() {
 
   useEffect(() => {
     loadUsers();
+    if (isSuperAdmin) {
+      listOffices()
+        .then(setOffices)
+        .catch((officeError) => setError(apiErrorMessage(officeError)));
+    }
   }, []);
 
   async function loadUsers() {
@@ -30,11 +40,16 @@ export function AdminUsersPage() {
   async function handleCreate(event) {
     event.preventDefault();
     try {
-      const created = await createUser({ username: username.trim(), password, role });
+      const payload = { username: username.trim(), password, role };
+      if (isSuperAdmin) {
+        payload.officeId = officeId ? Number(officeId) : null;
+      }
+      const created = await createUser(payload);
       setNotice(`Usuario "${created.username}" criado.`);
       setUsername("");
       setPassword("");
       setRole("ADVOGADO");
+      setOfficeId("");
       await loadUsers();
     } catch (createError) {
       setError(apiErrorMessage(createError));
@@ -97,8 +112,16 @@ export function AdminUsersPage() {
             <option value="ADVOGADO">ADVOGADO</option>
             <option value="REVISOR">REVISOR</option>
             <option value="PROTOCOLADOR">PROTOCOLADOR</option>
-            <option value="ADMIN">ADMIN</option>
+            {isSuperAdmin && <option value="ADMIN">ADMIN</option>}
           </select>
+          {isSuperAdmin && (
+            <select value={officeId} onChange={(event) => setOfficeId(event.target.value)}>
+              <option value="">Selecione o escritorio</option>
+              {offices.map((office) => (
+                <option key={office.id} value={office.id}>{office.name}</option>
+              ))}
+            </select>
+          )}
           <button type="submit" className="btn btn-primary">Criar</button>
         </form>
       </div>
@@ -115,6 +138,7 @@ export function AdminUsersPage() {
           <thead>
             <tr>
               <th>Usuario</th>
+              {isSuperAdmin && <th>Escritorio</th>}
               <th>Perfil</th>
               <th>Status</th>
               <th>Cadastro</th>
@@ -125,6 +149,7 @@ export function AdminUsersPage() {
             {filteredUsers.map((user) => (
               <tr key={user.id}>
                 <td>{user.username}</td>
+                {isSuperAdmin && <td>{user.officeName ?? (user.role === "SUPER_ADMIN" ? "Global" : "-")}</td>}
                 <td>
                   <span className={`badge role-${user.role.toLowerCase()}`}>{user.role}</span>
                 </td>

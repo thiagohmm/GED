@@ -1,5 +1,6 @@
 package br.com.ged.review;
 
+import br.com.ged.audit.AuditEventService;
 import br.com.ged.document.Document;
 import br.com.ged.document.DocumentResponse;
 import br.com.ged.document.DocumentRepository;
@@ -8,6 +9,7 @@ import br.com.ged.document.DocumentStatusHistoryService;
 import br.com.ged.exception.ConflictException;
 import br.com.ged.exception.NotFoundException;
 import br.com.ged.folder.FolderService;
+import br.com.ged.tenant.TenantScope;
 import br.com.ged.user.Role;
 import br.com.ged.user.RoleChecker;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,8 @@ public class ReviewService {
     private final FolderService folderService;
     private final RoleChecker roleChecker;
     private final DocumentStatusHistoryService statusHistoryService;
+    private final TenantScope tenantScope;
+    private final AuditEventService auditEventService;
 
     @Transactional
     public Review openReview(Document document, String openedBy) {
@@ -42,21 +46,29 @@ public class ReviewService {
 
     @Transactional(readOnly = true)
     public ReviewQueueResponse queue() {
-        List<Review> pending = reviewRepository.findByVerdictOrderByCreatedAtDesc(ReviewVerdict.PENDENTE);
+        List<Review> pending = reviewRepository.findByVerdictOrderByCreatedAtDesc(ReviewVerdict.PENDENTE)
+                .stream()
+                .filter(tenantScope::canAccessReview)
+                .toList();
         List<Review> recentlyDecided = reviewRepository.findTop10ByVerdictInAndDecidedAtIsNotNullOrderByDecidedAtDesc(
-                List.of(ReviewVerdict.APROVADO, ReviewVerdict.CORRECOES_SOLICITADAS));
+                        List.of(ReviewVerdict.APROVADO, ReviewVerdict.CORRECOES_SOLICITADAS))
+                .stream()
+                .filter(tenantScope::canAccessReview)
+                .toList();
         return new ReviewQueueResponse(toItems(pending), toItems(recentlyDecided));
     }
 
     @Transactional(readOnly = true)
     public ReviewResponse detail(Long reviewId) {
         Review review = findById(reviewId);
+        tenantScope.requireAccessToReview(review);
         return ReviewResponse.from(review, commentsOf(review));
     }
 
     @Transactional
     public ReviewCommentResponse addComment(Long reviewId, AddCommentRequest request, String username) {
         Review review = findById(reviewId);
+        tenantScope.requireAccessToReview(review);
         requireOpen(review);
         ReviewComment comment = new ReviewComment(review, username, request.body().strip(),
                 request.diffLineIndex(), cleanLineContent(request.diffLineContent()));
@@ -65,8 +77,9 @@ public class ReviewService {
 
     @Transactional
     public DocumentResponse decide(Long reviewId, DecideReviewRequest request, String username) {
-        roleChecker.requireAny(Set.of(Role.REVISOR, Role.ADMIN));
+        roleChecker.requireAny(Set.of(Role.REVISOR, Role.ADMIN, Role.SUPER_ADMIN));
         Review review = findById(reviewId);
+        tenantScope.requireAccessToReview(review);
         if (review.getVerdict() != ReviewVerdict.PENDENTE) {
             throw new ConflictException("Esta revisao ja foi decidida.");
         }
@@ -79,6 +92,9 @@ public class ReviewService {
                 : DocumentStatus.EDITANDO;
         String note = composeDecisionDescription(review, request, target);
         DocumentResponse response = statusHistoryService.changeStatus(document, target, note, username);
+        auditEventService.record("REVIEW_DECIDE", "REVIEW", String.valueOf(review.getId()),
+                AuditEventService.details("round", review.getRound(), "verdict", request.verdict().name(),
+                        "documentId", document.getId()));
         review.setVerdict(request.verdict());
         review.setDecidedBy(username);
         review.setDecidedAt(Instant.now());
@@ -91,6 +107,7 @@ public class ReviewService {
     public List<DocumentReviewsItem> reviewsOfDocument(Long documentId) {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new NotFoundException("Documento nao encontrado."));
+        tenantScope.requireAccessToDocument(document);
         return reviewRepository.findByDocumentOrderByRoundAsc(document).stream()
                 .map(review -> new DocumentReviewsItem(
                         review.getId(),

@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: ged
       POSTGRES_USER: ged
-      POSTGRES_PASSWORD: ged
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
     ports:
       - "5432:5432"
     volumes:
@@ -33,7 +33,8 @@ services:
     container_name: ged-onlyoffice
     environment:
       JWT_ENABLED: "true"
-      JWT_SECRET: ${GED_JWT_SECRET:-troque-este-segredo-em-producao-com-no-minimo-32-caracteres}
+      # O segredo do OnlyOffice e o mesmo do JWT da aplicacao.
+      JWT_SECRET: "${GED_JWT_SECRET:?Defina GED_JWT_SECRET no .env (openssl rand -hex 32)}"
     ports:
       - "8090:80"
     extra_hosts:

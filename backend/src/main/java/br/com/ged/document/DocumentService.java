@@ -1,5 +1,6 @@
 package br.com.ged.document;
 
+import br.com.ged.audit.AuditEventService;
 import br.com.ged.diff.DiffCalculator;
 import br.com.ged.diff.DiffLine;
 import br.com.ged.diff.TextExtractor;
@@ -14,6 +15,7 @@ import br.com.ged.review.Review;
 import br.com.ged.review.ReviewRepository;
 import br.com.ged.review.ReviewVerdict;
 import br.com.ged.search.SearchGateway;
+import br.com.ged.tenant.TenantScope;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,6 +54,8 @@ public class DocumentService {
     private final SearchGateway searchGateway;
     private final ReviewRepository reviewRepository;
     private final DocumentStatusChangeRepository statusChangeRepository;
+    private final TenantScope tenantScope;
+    private final AuditEventService auditEventService;
 
     public DocumentService(DocumentRepository documentRepository,
                            DocumentVersionRepository versionRepository,
@@ -62,7 +66,9 @@ public class DocumentService {
                            ObjectMapper objectMapper,
                            SearchGateway searchGateway,
                            ReviewRepository reviewRepository,
-                           DocumentStatusChangeRepository statusChangeRepository) {
+                           DocumentStatusChangeRepository statusChangeRepository,
+                           TenantScope tenantScope,
+                           AuditEventService auditEventService) {
         this.documentRepository = documentRepository;
         this.versionRepository = versionRepository;
         this.folderService = folderService;
@@ -73,23 +79,31 @@ public class DocumentService {
         this.searchGateway = searchGateway;
         this.reviewRepository = reviewRepository;
         this.statusChangeRepository = statusChangeRepository;
+        this.tenantScope = tenantScope;
+        this.auditEventService = auditEventService;
     }
 
     @Transactional
     public DocumentResponse upload(Long folderId, MultipartFile file, String changeDescription, String username) {
         Folder folder = folderService.findById(folderId);
+        tenantScope.requireAccessToFolder(folder);
         String documentName = sanitizeFileName(file.getOriginalFilename());
         DocumentKind kind = DocumentKind.fromFileName(documentName)
                 .orElseThrow(() -> new InvalidFileTypeException(documentName));
 
-        return documentRepository.findByFolderIdAndNameIgnoreCase(folderId, documentName)
+        DocumentResponse response = documentRepository.findByFolderIdAndNameIgnoreCase(folderId, documentName)
                 .<DocumentResponse>map(document -> addVersionTo(document, kind, file, changeDescription, username))
                 .orElseGet(() -> createDocument(folder, documentName, kind, file, changeDescription, username));
+        auditEventService.record("DOCUMENT_UPLOAD", "DOCUMENT", String.valueOf(response.id()),
+                AuditEventService.details("name", response.name(), "folderId", folderId,
+                        "version", response.currentVersion()));
+        return response;
     }
 
     @Transactional(readOnly = true)
     public List<DocumentResponse> listInFolder(Long folderId) {
-        folderService.findById(folderId);
+        Folder folder = folderService.findById(folderId);
+        tenantScope.requireAccessToFolder(folder);
         return documentRepository.findByFolderIdSortedByName(folderId).stream()
                 .map(DocumentResponse::from)
                 .toList();
@@ -97,12 +111,15 @@ public class DocumentService {
 
     @Transactional(readOnly = true)
     public DocumentResponse detail(Long documentId) {
-        return DocumentResponse.from(findById(documentId));
+        Document document = findById(documentId);
+        tenantScope.requireAccessToDocument(document);
+        return DocumentResponse.from(document);
     }
 
     @Transactional
     public DocumentResponse updateTags(Long documentId, List<String> requestedTags) {
         Document document = findById(documentId);
+        tenantScope.requireAccessToDocument(document);
         List<String> tags = requestedTags == null ? List.of() : requestedTags.stream()
                 .map(String::strip)
                 .filter(tag -> !tag.isEmpty())
@@ -112,12 +129,16 @@ public class DocumentService {
             throw new BusinessException("Use ate 20 tags com no maximo 40 caracteres cada.");
         }
         document.setTags(tags);
-        return DocumentResponse.from(document);
+        Document saved = documentRepository.save(document);
+        auditEventService.record("DOCUMENT_TAGS_UPDATE", "DOCUMENT", String.valueOf(saved.getId()),
+                AuditEventService.details("tags", tags));
+        return DocumentResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
     public List<DocumentVersionResponse> versions(Long documentId) {
         Document document = findById(documentId);
+        tenantScope.requireAccessToDocument(document);
         return versionRepository.findByDocumentOrderByVersionNumberDesc(document).stream()
                 .map(DocumentVersionResponse::from)
                 .toList();
@@ -126,6 +147,7 @@ public class DocumentService {
     @Transactional(readOnly = true)
     public DiffResponse diff(Long documentId, Integer requestedFrom, Integer requestedTo) {
         Document document = findById(documentId);
+        tenantScope.requireAccessToDocument(document);
         rejectDiffForNonVersionable(document);
 
         int to = requestedTo == null ? document.getCurrentVersion() : requestedTo;
@@ -142,6 +164,7 @@ public class DocumentService {
     public VersionDownload downloadVersion(Long versionId) {
         DocumentVersion version = versionRepository.findById(versionId)
                 .orElseThrow(() -> new NotFoundException("Versao nao encontrada."));
+        tenantScope.requireAccessToDocument(version.getDocument());
         Path stored = storageService.resolveStored(version.getFilePath());
         try {
             return new VersionDownload(version.getDocument().getName(), Files.readAllBytes(stored));
@@ -153,6 +176,9 @@ public class DocumentService {
     @Transactional
     public void delete(Long documentId) {
         Document document = findById(documentId);
+        tenantScope.requireAccessToDocument(document);
+        auditEventService.record("DOCUMENT_DELETE", "DOCUMENT", String.valueOf(document.getId()),
+                AuditEventService.details("name", document.getName()));
         documentRepository.delete(document);
         storageService.deleteDocumentDirectory(documentId);
         searchGateway.deleteVersions(documentId);
@@ -170,7 +196,9 @@ public class DocumentService {
     @Transactional
     public DocumentResponse move(Long documentId, Long targetFolderId) {
         Document document = findById(documentId);
+        tenantScope.requireAccessToDocument(document);
         Folder target = folderService.findById(targetFolderId);
+        tenantScope.requireAccessToFolder(target);
         if (document.getFolder().getId().equals(target.getId())) {
             throw new BusinessException("O documento ja esta nessa pasta.");
         }
@@ -180,6 +208,8 @@ public class DocumentService {
                 });
         document.setFolder(target);
         updateStatus(document, document.getStatus());
+        auditEventService.record("DOCUMENT_MOVE", "DOCUMENT", String.valueOf(document.getId()),
+                AuditEventService.details("toFolderId", target.getId()));
         return DocumentResponse.from(document);
     }
 

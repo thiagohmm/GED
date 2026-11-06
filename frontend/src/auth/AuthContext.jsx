@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (username, password) => {
     try {
       const { data } = await api.post("/auth/login", { username, password });
-      const loggedUser = { username: data.username, role: data.role };
+      const loggedUser = { username: data.username, role: data.role, officeId: data.officeId ?? null };
       storeSession(data.token, loggedUser);
       setUser(loggedUser);
       return true;

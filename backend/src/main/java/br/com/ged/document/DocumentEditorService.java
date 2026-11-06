@@ -1,9 +1,11 @@
 package br.com.ged.document;
 
+import br.com.ged.config.AuthenticatedUser;
 import br.com.ged.config.JwtService;
 import br.com.ged.exception.BusinessException;
 import br.com.ged.exception.ConflictException;
 import br.com.ged.exception.NotFoundException;
+import br.com.ged.tenant.TenantScope;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,19 +27,22 @@ public class DocumentEditorService {
     private final DocumentVersionRepository versionRepository;
     private final DocumentService documentService;
     private final JwtService jwtService;
+    private final TenantScope tenantScope;
     @Value("${ged.editor.document-server-url}")
     private String documentServerUrl;
     @Value("${ged.editor.public-backend-url}")
     private String publicBackendUrl;
 
     @Transactional(readOnly = true)
-    public EditorConfigResponse config(Long documentId, String username, String mode) {
+    public EditorConfigResponse config(Long documentId, AuthenticatedUser actor, String mode) {
+        String username = actor.username();
         boolean edit = "edit".equals(mode);
         if (!edit && !"view".equals(mode)) {
             throw new BusinessException("Modo de editor invalido.");
         }
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new NotFoundException("Documento nao encontrado."));
+        tenantScope.requireAccessToDocument(document);
         if (document.getKind() != DocumentKind.WORD && document.getKind() != DocumentKind.EXCEL
                 && document.getKind() != DocumentKind.PDF) {
             throw new BusinessException("O editor integrado aceita Word, Excel e PDF.");
@@ -53,6 +58,7 @@ public class DocumentEditorService {
         Map<String, Object> fileClaims = new LinkedHashMap<>();
         fileClaims.put("versionId", version.getId());
         fileClaims.put("documentId", documentId);
+        fileClaims.put("officeId", actor.officeId());
         fileClaims.put("sub", username);
         fileClaims.put("exp", Date.from(expires));
         String fileToken = jwtService.sign(fileClaims);
@@ -63,7 +69,7 @@ public class DocumentEditorService {
         editorConfig.put("mode", edit ? "edit" : "view");
         if (edit) {
             editorConfig.put("callbackUrl", publicBackendUrl + "/api/editor/callback/" + documentId
-                    + "?token=" + sessionToken(document, version, username, key, expires));
+                    + "?token=" + sessionToken(document, version, actor, key, expires));
         }
         editorConfig.put("user", editorUser);
 
@@ -97,6 +103,10 @@ public class DocumentEditorService {
         Claims claims = verifyToken(token);
         long tokenVersionId = numberClaim(claims, "versionId");
         if (tokenVersionId != versionId) throw new BusinessException("Token de arquivo invalido.");
+        DocumentVersion version = versionRepository.findById(versionId)
+                .orElseThrow(() -> new NotFoundException("Versao nao encontrada."));
+        Long tokenOffice = claims.get("officeId", Long.class);
+        tenantScope.requireOfficeMatch(tokenOffice, tenantScope.officeOfDocument(version.getDocument()).orElse(null));
         return documentService.downloadVersion(versionId);
     }
 
@@ -105,6 +115,10 @@ public class DocumentEditorService {
         if (numberClaim(sessionClaims, "documentId") != documentId) {
             throw new BusinessException("Sessao de edicao invalida.");
         }
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new NotFoundException("Documento nao encontrado."));
+        Long sessionOffice = sessionClaims.get("officeId", Long.class);
+        tenantScope.requireOfficeMatch(sessionOffice, tenantScope.officeOfDocument(document).orElse(null));
         Object bodyToken = body.get("token");
         if (!(bodyToken instanceof String signedCallback)) {
             throw new BusinessException("Callback do editor sem assinatura.");
@@ -117,8 +131,6 @@ public class DocumentEditorService {
         String fileUrl = String.valueOf(callbackClaims.get("url"));
         byte[] content = fetchEditedFile(fileUrl);
         if (content.length > 50L * 1024 * 1024) throw new BusinessException("Arquivo editado maior que 50MB.");
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new NotFoundException("Documento nao encontrado."));
         int expectedVersion = ((Number) sessionClaims.get("versionNumber")).intValue();
         if (document.getCurrentVersion() > expectedVersion) return Map.of("error", 0);
         if (document.getCurrentVersion() != expectedVersion) throw new ConflictException("A versao foi alterada durante a edicao.");
@@ -126,12 +138,13 @@ public class DocumentEditorService {
         return Map.of("error", 0);
     }
 
-    private String sessionToken(Document document, DocumentVersion version, String username, String key, Instant expires) {
+    private String sessionToken(Document document, DocumentVersion version, AuthenticatedUser actor, String key, Instant expires) {
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("documentId", document.getId());
         claims.put("versionId", version.getId());
         claims.put("versionNumber", version.getVersionNumber());
-        claims.put("sub", username);
+        claims.put("officeId", actor.officeId());
+        claims.put("sub", actor.username());
         claims.put("key", key);
         claims.put("exp", Date.from(expires));
         return jwtService.sign(claims);

@@ -1,6 +1,7 @@
 package br.com.ged.search;
 
 import br.com.ged.document.DocumentStatus;
+import br.com.ged.tenant.TenantScope;
 import br.com.ged.user.Role;
 import br.com.ged.user.UserRepository;
 import br.com.ged.user.UserResponse;
@@ -22,6 +23,7 @@ public class SearchController {
     private final SearchGateway searchGateway;
     private final SearchFilterService searchFilterService;
     private final UserRepository userRepository;
+    private final TenantScope tenantScope;
 
     @GetMapping("/api/search")
     public List<SearchResultItem> search(@RequestParam @NotBlank String q,
@@ -37,10 +39,22 @@ public class SearchController {
 
     @GetMapping("/api/search/filters")
     public SearchFilterOptions filterOptions() {
-        List<UserResponse> attorneys = userRepository.findByRoleAndEnabledTrueOrderByUsernameAsc(Role.ADVOGADO)
-                .stream().map(UserResponse::from).toList();
-        List<UserResponse> reviewers = userRepository.findByRoleAndEnabledTrueOrderByUsernameAsc(Role.REVISOR)
-                .stream().map(UserResponse::from).toList();
+        List<UserResponse> attorneys = attorneys();
+        List<UserResponse> reviewers = reviewers();
         return new SearchFilterOptions(attorneys, reviewers);
+    }
+
+    private List<UserResponse> attorneys() {
+        return tenantScope.currentOffice()
+                .map(officeId -> userRepository.findByOfficeIdAndRoleAndEnabledTrueOrderByUsernameAsc(officeId, Role.ADVOGADO))
+                .orElseGet(() -> userRepository.findByRoleAndEnabledTrueOrderByUsernameAsc(Role.ADVOGADO))
+                .stream().map(UserResponse::from).toList();
+    }
+
+    private List<UserResponse> reviewers() {
+        return tenantScope.currentOffice()
+                .map(officeId -> userRepository.findByOfficeIdAndRoleAndEnabledTrueOrderByUsernameAsc(officeId, Role.REVISOR))
+                .orElseGet(() -> userRepository.findByRoleAndEnabledTrueOrderByUsernameAsc(Role.REVISOR))
+                .stream().map(UserResponse::from).toList();
     }
 }

@@ -52,8 +52,13 @@ public class ElasticsearchSearchGateway implements SearchGateway {
     }
 
     @Override
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    @Override
     public boolean isAvailable() {
-        if (!enabled) {
+        if (!enabled || client == null) {
             return false;
         }
         try {
@@ -138,6 +143,20 @@ public class ElasticsearchSearchGateway implements SearchGateway {
                     .query(query -> query.term(term -> term.field("documentId").value(documentId))));
         } catch (IOException | ElasticsearchException exception) {
             log.warn("Falha ao remover do indice o documento {}: {}", documentId, exception.getMessage());
+        }
+    }
+
+    @Override
+    public void clearIndex() {
+        if (!enabled) {
+            return;
+        }
+        try {
+            client.deleteByQuery(request -> request
+                    .index(INDEX)
+                    .query(query -> query.matchAll(m -> m)));
+        } catch (IOException | ElasticsearchException exception) {
+            log.warn("Falha ao limpar o indice de busca: {}", exception.getMessage());
         }
     }
 

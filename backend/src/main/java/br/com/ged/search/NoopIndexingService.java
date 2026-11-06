@@ -10,6 +10,11 @@ import java.util.function.Function;
 public class NoopIndexingService implements SearchGateway {
 
     @Override
+    public boolean isEnabled() {
+        return false;
+    }
+
+    @Override
     public boolean isAvailable() {
         return false;
     }
@@ -33,6 +38,10 @@ public class NoopIndexingService implements SearchGateway {
 
     @Override
     public void deleteVersions(Long documentId) {
+    }
+
+    @Override
+    public void clearIndex() {
     }
 
     @Override

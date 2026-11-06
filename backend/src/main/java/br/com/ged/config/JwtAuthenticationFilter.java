@@ -1,5 +1,8 @@
 package br.com.ged.config;
 
+import br.com.ged.user.User;
+import br.com.ged.user.UserRepository;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,6 +17,11 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Autenticacao stateless por JWT. O token carrega apenas o username; papel, escritorio e
+ * status do usuario sao recarregados do banco em todo request, de modo que mudancas de
+ * papel/escritorio/desativacao valem imediatamente.
+ */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -21,9 +29,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository) {
         this.jwtService = jwtService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -31,7 +41,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         extractBearerToken(request)
-                .flatMap(jwtService::parse)
+                .flatMap(jwtService::usernameOf)
+                .flatMap(username -> userRepository.findByUsernameIgnoreCase(username))
+                .filter(User::isEnabled)
+                .map(user -> new AuthenticatedUser(user.getId(), user.getUsername(), user.getRole(), user.getOfficeId()))
                 .ifPresent(JwtAuthenticationFilter::authenticateWith);
 
         filterChain.doFilter(request, response);
@@ -45,9 +58,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return Optional.of(header.substring(BEARER_PREFIX.length()));
     }
 
-    private static void authenticateWith(JwtService.JwtPrincipal principal) {
+    private static void authenticateWith(AuthenticatedUser principal) {
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                principal.username(),
+                principal,
                 null,
                 List.of(new SimpleGrantedAuthority("ROLE_" + principal.role().name())));
         SecurityContextHolder.getContext().setAuthentication(authentication);

@@ -36,6 +36,9 @@ public class User {
     @Column(nullable = false, length = 60)
     private Role role;
 
+    @Column(name = "office_id")
+    private Long officeId;
+
     @Column(nullable = false)
     private boolean enabled;
 
@@ -48,5 +51,10 @@ public class User {
         this.passwordHash = passwordHash;
         this.role = role;
         this.enabled = enabled;
+    }
+
+    public User(String username, String passwordHash, Role role, boolean enabled, Long officeId) {
+        this(username, passwordHash, role, enabled);
+        this.officeId = officeId;
     }
 }

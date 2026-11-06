@@ -9,5 +9,11 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     Optional<Project> findByNameIgnoreCase(String name);
 
+    Optional<Project> findByOfficeIdAndNameIgnoreCase(Long officeId, String name);
+
     List<Project> findAllByOrderByNameAsc();
+
+    List<Project> findByOfficeIdOrderByNameAsc(Long officeId);
+
+    long countByOfficeId(Long officeId);
 }

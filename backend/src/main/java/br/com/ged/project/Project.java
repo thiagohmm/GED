@@ -21,10 +21,18 @@ public class Project {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 120)
+    @Column(nullable = false, length = 120)
     private String name;
+
+    @Column(name = "office_id", nullable = false)
+    private Long officeId;
 
     public Project(String name) {
         this.name = name;
+    }
+
+    public Project(String name, Long officeId) {
+        this.name = name;
+        this.officeId = officeId;
     }
 }

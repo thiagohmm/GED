@@ -57,6 +57,11 @@ public class StorageService {
         return resolveFor(relativePath);
     }
 
+    /** Raiz absoluta da storage (usada pelo backup para empacotar/extrair). */
+    public Path storageRoot() {
+        return baseDirectory;
+    }
+
     public void deleteStoredFile(String relativePath) {
         try {
             Files.deleteIfExists(resolveFor(relativePath));

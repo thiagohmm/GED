@@ -38,6 +38,9 @@ class DocumentEditorServiceTest {
     @Mock
     private DocumentService documentService;
 
+    @Mock
+    private br.com.ged.tenant.TenantScope tenantScope;
+
     private DocumentEditorService editorService;
     private Folder folder;
 
@@ -47,7 +50,8 @@ class DocumentEditorServiceTest {
                 documentRepository,
                 versionRepository,
                 documentService,
-                new JwtService("segredo-de-teste-com-no-minimo-32-caracteres!!", 720));
+                new JwtService("segredo-de-teste-com-no-minimo-32-caracteres!!", 720),
+                tenantScope);
         ReflectionTestUtils.setField(editorService, "documentServerUrl", "http://localhost:8090");
         ReflectionTestUtils.setField(editorService, "publicBackendUrl", "http://host.docker.internal:8080");
         folder = new Folder("Contratos", null, "admin");
@@ -60,7 +64,7 @@ class DocumentEditorServiceTest {
         versionar(documento, 2);
         when(documentRepository.findById(DOCUMENTO_ID)).thenReturn(Optional.of(documento));
 
-        EditorConfigResponse response = editorService.config(DOCUMENTO_ID, "revisor", "view");
+        EditorConfigResponse response = editorService.config(DOCUMENTO_ID, ator("revisor", br.com.ged.user.Role.REVISOR), "view");
 
         assertEquals("http://localhost:8090", response.documentServerUrl());
         Map<String, Object> config = response.config();
@@ -80,7 +84,7 @@ class DocumentEditorServiceTest {
         versionar(documento, 1);
         when(documentRepository.findById(DOCUMENTO_ID)).thenReturn(Optional.of(documento));
 
-        EditorConfigResponse response = editorService.config(DOCUMENTO_ID, "admin", "edit");
+        EditorConfigResponse response = editorService.config(DOCUMENTO_ID, ator("admin", br.com.ged.user.Role.ADMIN), "edit");
 
         assertEquals("cell", response.config().get("documentType"));
         assertEquals(true, permissions(response.config()).get("edit"));
@@ -96,7 +100,7 @@ class DocumentEditorServiceTest {
         versionar(documento, 1);
         when(documentRepository.findById(DOCUMENTO_ID)).thenReturn(Optional.of(documento));
 
-        assertThrows(ConflictException.class, () -> editorService.config(DOCUMENTO_ID, "admin", "edit"));
+        assertThrows(ConflictException.class, () -> editorService.config(DOCUMENTO_ID, ator("admin", br.com.ged.user.Role.ADMIN), "edit"));
     }
 
     @Test
@@ -105,7 +109,7 @@ class DocumentEditorServiceTest {
         versionar(documento, 3);
         when(documentRepository.findById(DOCUMENTO_ID)).thenReturn(Optional.of(documento));
 
-        EditorConfigResponse response = editorService.config(DOCUMENTO_ID, "admin", "view");
+        EditorConfigResponse response = editorService.config(DOCUMENTO_ID, ator("admin", br.com.ged.user.Role.ADMIN), "view");
 
         assertEquals("pdf", response.config().get("documentType"));
         assertEquals("view", editorConfig(response.config()).get("mode"));
@@ -117,7 +121,7 @@ class DocumentEditorServiceTest {
         versionar(documento, 1);
         when(documentRepository.findById(DOCUMENTO_ID)).thenReturn(Optional.of(documento));
 
-        EditorConfigResponse response = editorService.config(DOCUMENTO_ID, "admin", "edit");
+        EditorConfigResponse response = editorService.config(DOCUMENTO_ID, ator("admin", br.com.ged.user.Role.ADMIN), "edit");
 
         assertEquals("pdf", response.config().get("documentType"));
         assertEquals("edit", editorConfig(response.config()).get("mode"));
@@ -128,19 +132,23 @@ class DocumentEditorServiceTest {
         Document documento = documento("foto.png", DocumentKind.IMAGE, DocumentStatus.EDITANDO);
         when(documentRepository.findById(DOCUMENTO_ID)).thenReturn(Optional.of(documento));
 
-        assertThrows(BusinessException.class, () -> editorService.config(DOCUMENTO_ID, "admin", "view"));
+        assertThrows(BusinessException.class, () -> editorService.config(DOCUMENTO_ID, ator("admin", br.com.ged.user.Role.ADMIN), "view"));
     }
 
     @Test
     void modoInexistenteEhRejeitado() {
-        assertThrows(BusinessException.class, () -> editorService.config(DOCUMENTO_ID, "admin", "banana"));
+        assertThrows(BusinessException.class, () -> editorService.config(DOCUMENTO_ID, ator("admin", br.com.ged.user.Role.ADMIN), "banana"));
     }
 
     @Test
     void documentoInexistenteEhRejeitado() {
         when(documentRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThrows(NotFoundException.class, () -> editorService.config(99L, "admin", "view"));
+        assertThrows(NotFoundException.class, () -> editorService.config(99L, ator("admin", br.com.ged.user.Role.ADMIN), "view"));
+    }
+
+    private br.com.ged.config.AuthenticatedUser ator(String username, br.com.ged.user.Role role) {
+        return new br.com.ged.config.AuthenticatedUser(1L, username, role, 7L);
     }
 
     private Document documento(String nome, DocumentKind kind, DocumentStatus status) {

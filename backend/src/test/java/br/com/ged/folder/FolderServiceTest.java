@@ -1,5 +1,6 @@
 package br.com.ged.folder;
 
+import br.com.ged.audit.AuditEventService;
 import br.com.ged.document.Document;
 import br.com.ged.document.DocumentKind;
 import br.com.ged.document.DocumentVersion;
@@ -52,12 +53,18 @@ class FolderServiceTest {
     @Mock
     private SearchGateway searchGateway;
 
+    @Mock
+    private br.com.ged.tenant.TenantScope tenantScope;
+
+    @Mock
+    private AuditEventService auditEventService;
+
     private FolderService folderService;
 
     @BeforeEach
     void setUp() {
         folderService = new FolderService(folderRepository, documentRepository,
-                projectRepository, userRepository, roleChecker, searchGateway);
+                projectRepository, userRepository, roleChecker, searchGateway, tenantScope, auditEventService);
     }
 
     @Test

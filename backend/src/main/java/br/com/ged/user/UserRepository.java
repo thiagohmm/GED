@@ -12,4 +12,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByUsernameIgnoreCase(String username);
 
     List<User> findByRoleAndEnabledTrueOrderByUsernameAsc(Role role);
+
+    List<User> findByOfficeIdOrderByUsernameAsc(Long officeId);
+
+    List<User> findByOfficeIdAndRoleAndEnabledTrueOrderByUsernameAsc(Long officeId, Role role);
+
+    boolean existsByRole(Role role);
+
+    long countByOfficeId(Long officeId);
 }

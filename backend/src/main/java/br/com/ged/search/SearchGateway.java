@@ -8,6 +8,9 @@ import java.util.function.Function;
 
 public interface SearchGateway {
 
+    /** true se a busca foi habilitada por configuracao (independente de disponibilidade em tempo real). */
+    boolean isEnabled();
+
     boolean isAvailable();
 
     void ensureIndex();
@@ -19,6 +22,9 @@ public interface SearchGateway {
     void indexVersion(DocumentVersion version, String folderPath);
 
     void deleteVersions(Long documentId);
+
+    /** Remove todos os documentos do indice (reindexacao completa). */
+    void clearIndex();
 
     List<SearchResultItem> search(String query, DocumentStatus status);
 }

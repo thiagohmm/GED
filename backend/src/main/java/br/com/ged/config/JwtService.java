@@ -25,6 +25,11 @@ public class JwtService {
 
     public JwtService(@Value("${ged.jwt.secret}") String secret,
                       @Value("${ged.jwt.expiration-minutes:720}") long expirationMinutes) {
+        if (secret == null || secret.isBlank() || secret.length() < 32) {
+            throw new IllegalStateException(
+                    "GED_JWT_SECRET nao configurada ou com menos de 32 caracteres. Defina um segredo aleatorio "
+                            + "(ex.: openssl rand -hex 32) em GED_JWT_SECRET.");
+        }
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMinutes = expirationMinutes;
     }
@@ -32,9 +37,13 @@ public class JwtService {
     public String issueToken(User user) {
         Instant issuedAt = Instant.now();
         Instant expiration = issuedAt.plus(expirationMinutes, ChronoUnit.MINUTES);
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(user.getUsername())
-                .claim("role", user.getRole().name())
+                .claim("role", user.getRole().name());
+        if (user.getOfficeId() != null) {
+            builder.claim("officeId", user.getOfficeId());
+        }
+        return builder
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiration))
                 .signWith(signingKey)
@@ -49,6 +58,20 @@ public class JwtService {
                 return Optional.empty();
             }
             return Optional.of(new JwtPrincipal(claims.getSubject(), Role.valueOf(roleClaim)));
+        } catch (JwtException | IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Valida o token e retorna o username (sujeito). O papel/escritorio nao vem do claim;
+     * sao recarregados do banco pelo {@link JwtAuthenticationFilter}.
+     */
+    public Optional<String> usernameOf(String token) {
+        try {
+            Claims claims = verify(token);
+            String subject = claims.getSubject();
+            return (subject == null || subject.isBlank()) ? Optional.empty() : Optional.of(subject);
         } catch (JwtException | IllegalArgumentException exception) {
             return Optional.empty();
         }

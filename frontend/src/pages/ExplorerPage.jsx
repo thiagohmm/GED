@@ -3,6 +3,7 @@ import { assignRootFolder, createFolder, createProject,
   deleteFolder,
   documentsByFolder,
   folderTree,
+  listOffices,
   listProjects,
   listUsers,
   moveDocument,
@@ -19,7 +20,8 @@ import { Link } from "react-router-dom";
 
 export function ExplorerPage() {
   const { user } = useAuth();
-  const canManageRoots = user?.role === "ADMIN" || user?.role === "PROTOCOLADOR";
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const canManageRoots = user?.role === "ADMIN" || user?.role === "PROTOCOLADOR" || isSuperAdmin;
   const [tree, setTree] = useState([]);
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [documents, setDocuments] = useState([]);
@@ -38,6 +40,8 @@ export function ExplorerPage() {
   const [projectId, setProjectId] = useState("");
   const [attorneyId, setAttorneyId] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [projectOfficeId, setProjectOfficeId] = useState("");
+  const [offices, setOffices] = useState([]);
   const [assignmentFolder, setAssignmentFolder] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [moveTargetId, setMoveTargetId] = useState("");
@@ -69,14 +73,17 @@ export function ExplorerPage() {
 
   useEffect(() => {
     if (!canManageRoots) return;
-    Promise.all([listProjects(), listUsers()]).then(([allProjects, users]) => {
+    const loadable = [listProjects(), listUsers()];
+    if (isSuperAdmin) loadable.push(listOffices());
+    Promise.all(loadable).then(([allProjects, users, allOffices]) => {
       setProjects(allProjects);
       setAttorneys(users.filter((item) => item.role === "ADVOGADO" && item.enabled));
       if (allProjects.length) setProjectId(String(allProjects[0].id));
       const firstAttorney = users.find((item) => item.role === "ADVOGADO" && item.enabled);
       if (firstAttorney) setAttorneyId(String(firstAttorney.id));
+      if (allOffices) setOffices(allOffices);
     }).catch((loadError) => setError(apiErrorMessage(loadError)));
-  }, [canManageRoots]);
+  }, [canManageRoots, isSuperAdmin]);
 
   function handleSelect(folder) {
     setSelectedFolder(folder);
@@ -142,8 +149,12 @@ export function ExplorerPage() {
 
   async function handleCreateProject() {
     if (!projectName.trim()) return;
+    if (isSuperAdmin && !projectOfficeId) {
+      setError("Selecione o escritorio do projeto.");
+      return;
+    }
     try {
-      const created = await createProject(projectName.trim());
+      const created = await createProject(projectName.trim(), isSuperAdmin ? Number(projectOfficeId) : undefined);
       setProjects((items) => [...items, created].sort((a, b) => a.name.localeCompare(b.name)));
       setProjectId(String(created.id));
       setProjectName("");
@@ -381,7 +392,20 @@ export function ExplorerPage() {
             <button type="button" className="btn btn-primary" disabled={!newFolderName.trim() || !projectId || !attorneyId} onClick={() => handleCreateFolder(false)}>Criar pasta raiz</button>
             <div className="inline-form">
               <input placeholder="Cadastrar projeto" value={projectName} onChange={(event) => setProjectName(event.target.value)} />
-              <button type="button" className="btn" disabled={!projectName.trim()} onClick={handleCreateProject}>Adicionar projeto</button>
+              {isSuperAdmin && (
+                <select aria-label="Escritório do projeto" value={projectOfficeId} onChange={(event) => setProjectOfficeId(event.target.value)}>
+                  <option value="">Escritório</option>
+                  {offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}
+                </select>
+              )}
+              <button
+                type="button"
+                className="btn"
+                disabled={!projectName.trim() || (isSuperAdmin && !projectOfficeId)}
+                onClick={handleCreateProject}
+              >
+                Adicionar projeto
+              </button>
             </div>
           </div>}
           <div className="inline-form">

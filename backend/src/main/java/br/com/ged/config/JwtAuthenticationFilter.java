@@ -1,8 +1,10 @@
 package br.com.ged.config;
 
+import br.com.ged.office.Office;
+import br.com.ged.office.OfficeRepository;
+import br.com.ged.user.Role;
 import br.com.ged.user.User;
 import br.com.ged.user.UserRepository;
-import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,9 +20,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Autenticacao stateless por JWT. O token carrega apenas o username; papel, escritorio e
- * status do usuario sao recarregados do banco em todo request, de modo que mudancas de
- * papel/escritorio/desativacao valem imediatamente.
+ * Autenticacao stateless por JWT. Valida assinatura e typ=ACCESS, confere tokenVersion
+ * (invalidando tokens apos troca de senha), status ativo do usuario e status ativo do escritorio.
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -30,10 +31,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final OfficeRepository officeRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository) {
+    public JwtAuthenticationFilter(JwtService jwtService,
+                                   UserRepository userRepository,
+                                   OfficeRepository officeRepository) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
+        this.officeRepository = officeRepository;
     }
 
     @Override
@@ -41,13 +46,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         extractBearerToken(request)
-                .flatMap(jwtService::usernameOf)
-                .flatMap(username -> userRepository.findByUsernameIgnoreCase(username))
-                .filter(User::isEnabled)
+                .flatMap(jwtService::verifyAccessToken)
+                .flatMap(claims -> userRepository.findByUsernameIgnoreCase(claims.username())
+                        .filter(User::isEnabled)
+                        .filter(user -> user.getTokenVersion() == claims.tokenVersion())
+                        .filter(this::hasValidActiveOffice))
                 .map(user -> new AuthenticatedUser(user.getId(), user.getUsername(), user.getRole(), user.getOfficeId()))
                 .ifPresent(JwtAuthenticationFilter::authenticateWith);
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean hasValidActiveOffice(User user) {
+        if (user.getRole() == Role.SUPER_ADMIN) {
+            return true;
+        }
+        if (user.getOfficeId() == null) {
+            return false;
+        }
+        return officeRepository.findById(user.getOfficeId())
+                .map(Office::isEnabled)
+                .orElse(false);
     }
 
     private Optional<String> extractBearerToken(HttpServletRequest request) {

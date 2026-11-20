@@ -18,7 +18,7 @@ import java.util.Optional;
 /**
  * Isolacao entre escritorios. Todo acesso a dados sobe ate a pasta raiz, que referencia um
  * projeto, que pertence a um escritorio. O usuario so acessa dados do proprio escritorio;
- * SUPER_ADMIN acessa tudo.
+ * apenas SUPER_ADMIN autenticado acessa dados de qualquer escritorio.
  */
 @Service
 public class TenantScope {
@@ -38,13 +38,12 @@ public class TenantScope {
     }
 
     /**
-     * Escritorio do usuario atual. Vazio = sem restricao (SUPER_ADMIN ou chamadas sem
-     * contexto autenticado, como testes unitarios e callbacks do editor).
+     * Escritorio do usuario atual. Vazio exclusivamente para SUPER_ADMIN autenticado.
      */
     public Optional<Long> currentOffice() {
         AuthenticatedUser principal = currentPrincipal();
         if (principal == null) {
-            return Optional.empty();
+            throw new AccessDeniedException("Autenticacao obrigatoria para resolver o escopo do escritorio.");
         }
         return principal.officeScope();
     }
@@ -54,10 +53,6 @@ public class TenantScope {
         return principal != null && principal.isSuperAdmin();
     }
 
-    /**
-     * Escritorio dono da pasta (via pasta raiz -> projeto). Vazio quando a raiz nao tem
-     * projeto (dados sem escritorio: acessiveis apenas sem restricao, ex. SUPER_ADMIN).
-     */
     public Optional<Long> officeOfFolder(Folder folder) {
         if (folder == null) {
             return Optional.empty();
@@ -88,14 +83,17 @@ public class TenantScope {
     }
 
     public boolean canAccessOffice(Long resourceOffice) {
-        Optional<Long> current = currentOffice();
-        if (current.isEmpty()) {
-            return true;
-        }
-        if (resourceOffice == null) {
+        AuthenticatedUser principal = currentPrincipal();
+        if (principal == null) {
             return false;
         }
-        return current.get().equals(resourceOffice);
+        if (principal.isSuperAdmin()) {
+            return true;
+        }
+        if (principal.officeId() == null || resourceOffice == null) {
+            return false;
+        }
+        return principal.officeId().equals(resourceOffice);
     }
 
     public boolean canAccessFolder(Folder folder) {

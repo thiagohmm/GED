@@ -37,18 +37,20 @@ public class BackupController {
     @PostMapping("/backups")
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, String> create() {
-        return Map.of("backup", backupService.create());
+        String name = backupService.create();
+        return Map.of("backup", name, "name", name);
     }
 
     @PostMapping("/backups/{name}/verify")
-    public Map<String, Object> verify(@PathVariable String name) {
+    public ResponseEntity<Map<String, Object>> verify(@PathVariable String name) {
         List<String> failures = backupService.verify(name);
-        return Map.of("ok", failures.isEmpty(), "failures", failures);
+        HttpStatus status = failures.isEmpty() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(Map.of("ok", failures.isEmpty(), "failures", failures));
     }
 
     @PostMapping("/restore")
     public Map<String, String> restore(@RequestBody Map<String, String> request) {
-        String backup = request.get("backup");
+        String backup = request == null ? null : request.get("backup");
         backupService.restore(backup);
         return Map.of("restored", String.valueOf(backup));
     }

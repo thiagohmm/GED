@@ -52,6 +52,7 @@ public class DocumentEditorController {
         String lower = name.toLowerCase();
         if (lower.endsWith(".pdf")) return MediaType.APPLICATION_PDF;
         if (lower.endsWith(".docx")) return MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        if (lower.endsWith(".xlsx")) return MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         if (lower.endsWith(".png")) return MediaType.IMAGE_PNG;
         if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return MediaType.IMAGE_JPEG;
         return MediaType.APPLICATION_OCTET_STREAM;

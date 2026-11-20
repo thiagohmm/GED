@@ -86,7 +86,7 @@ public class SearchFilterService {
      * Remove da busca qualquer documento fora do escritorio do usuario.
      */
     private List<SearchResultItem> applyOfficeScope(List<SearchResultItem> results) {
-        if (tenantScope.currentOffice().isEmpty()) {
+        if (tenantScope.isCurrentSuperAdmin()) {
             return results;
         }
         Set<Long> ids = results.stream().map(SearchResultItem::documentId).toList().stream().collect(java.util.stream.Collectors.toSet());

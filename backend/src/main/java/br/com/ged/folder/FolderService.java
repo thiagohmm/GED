@@ -25,9 +25,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class FolderService {
+
+    private static final Set<Role> ROOT_MANAGER_ROLES =
+            Set.of(Role.ADMIN, Role.PROTOCOLADOR, Role.SUPER_ADMIN);
 
     private final FolderRepository folderRepository;
     private final DocumentRepository documentRepository;
@@ -59,10 +63,9 @@ public class FolderService {
             tenantScope.requireAccessToFolder(parent);
         }
         String name = normalizeName(request.name());
-        rejectDuplicateName(name, parent);
         Folder folder = new Folder(name, parent, username);
         if (parent == null) {
-            roleChecker.requireAny(java.util.Set.of(Role.ADMIN, Role.PROTOCOLADOR));
+            roleChecker.requireAny(ROOT_MANAGER_ROLES);
             if (request.projectId() == null || request.assignedAttorneyId() == null) {
                 throw new BusinessException("Informe o projeto e o advogado responsavel pela pasta raiz.");
             }
@@ -75,8 +78,11 @@ public class FolderService {
                 throw new BusinessException("Selecione um advogado ativo.");
             }
             requireSameOffice(project, attorney);
+            rejectDuplicateName(name, null, project.getOfficeId(), null);
             folder.setProject(project);
             folder.setAssignedAttorney(attorney);
+        } else {
+            rejectDuplicateName(name, parent, null, null);
         }
         Folder saved = folderRepository.save(folder);
         auditEventService.record("FOLDER_CREATE", "FOLDER", String.valueOf(saved.getId()),
@@ -90,7 +96,10 @@ public class FolderService {
         Folder folder = findById(id);
         tenantScope.requireAccessToFolder(folder);
         String name = normalizeName(request.name());
-        rejectDuplicateName(name, folder.getParent(), folder.getId());
+        Long rootOfficeId = folder.getParent() == null && folder.getProject() != null
+                ? folder.getProject().getOfficeId()
+                : null;
+        rejectDuplicateName(name, folder.getParent(), rootOfficeId, folder.getId());
         folder.setName(name);
         reindexSubtree(folder);
         return toNode(folder);
@@ -115,6 +124,8 @@ public class FolderService {
                     throw new ConflictException("Ja existe uma pasta com este nome na pasta destino.");
                 });
         folder.setParent(target);
+        folder.setProject(null);
+        folder.setAssignedAttorney(null);
         reindexSubtree(folder);
         return toNode(folder);
     }
@@ -141,7 +152,7 @@ public class FolderService {
 
     @Transactional
     public FolderNode assignRoot(Long id, AssignRootFolderRequest request) {
-        roleChecker.requireAny(java.util.Set.of(Role.ADMIN, Role.PROTOCOLADOR));
+        roleChecker.requireAny(ROOT_MANAGER_ROLES);
         Folder folder = findById(id);
         tenantScope.requireAccessToFolder(folder);
         if (folder.getParent() != null) {
@@ -156,8 +167,10 @@ public class FolderService {
             throw new BusinessException("Selecione um advogado ativo.");
         }
         requireSameOffice(project, attorney);
+        rejectDuplicateName(folder.getName(), null, project.getOfficeId(), folder.getId());
         folder.setProject(project);
         folder.setAssignedAttorney(attorney);
+        reindexSubtree(folder);
         return toNode(folder);
     }
 
@@ -179,14 +192,18 @@ public class FolderService {
     @Transactional(readOnly = true)
     public List<FolderNode> tree() {
         Map<Long, FolderNode> nodes = new HashMap<>();
+        Map<Long, Folder> byId = new HashMap<>();
         List<Folder> folders = folderRepository.findAll().stream()
                 .sorted(Comparator.comparing(Folder::getName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
-        folders.forEach(folder -> nodes.put(folder.getId(), toNode(folder)));
+        for (Folder folder : folders) {
+            byId.put(folder.getId(), folder);
+            nodes.put(folder.getId(), toNode(folder));
+        }
         folders.forEach(folder -> linkToParent(nodes, folder));
         return nodes.values().stream()
                 .filter(node -> node.parentId() == null)
-                .filter(node -> tenantScope.canAccessOffice(officeOfNodeId(node.id()).orElse(null)))
+                .filter(node -> tenantScope.canAccessFolder(byId.get(node.id())))
                 .toList();
     }
 
@@ -211,34 +228,26 @@ public class FolderService {
         }
     }
 
-    private Optional<Long> officeOfNodeId(Long folderId) {
-        Folder folder = folderRepository.findById(folderId).orElse(null);
-        if (folder == null) {
-            return Optional.empty();
-        }
-        return tenantScope.officeOfFolder(folder);
-    }
-
     private Folder resolveParent(Long parentId) {
         return parentId == null ? null : findById(parentId);
     }
 
-    private void rejectDuplicateName(String name, Folder parent, Long ignoredFolderId) {
-        conflictingFolder(name, parent)
+    private void rejectDuplicateName(String name, Folder parent, Long rootOfficeId, Long ignoredFolderId) {
+        conflictingFolder(name, parent, rootOfficeId)
                 .filter(conflicting -> !conflicting.getId().equals(ignoredFolderId))
                 .ifPresent(conflicting -> {
                     throw new ConflictException("Ja existe uma pasta com este nome neste nivel.");
                 });
     }
 
-    private void rejectDuplicateName(String name, Folder parent) {
-        rejectDuplicateName(name, parent, null);
-    }
-
-    private Optional<Folder> conflictingFolder(String name, Folder parent) {
-        return parent == null
-                ? folderRepository.findByParentIsNullAndNameIgnoreCase(name)
-                : folderRepository.findByParentAndNameIgnoreCase(parent, name);
+    private Optional<Folder> conflictingFolder(String name, Folder parent, Long rootOfficeId) {
+        if (parent != null) {
+            return folderRepository.findByParentAndNameIgnoreCase(parent, name);
+        }
+        if (rootOfficeId != null) {
+            return folderRepository.findRootByOfficeIdAndNameIgnoreCase(rootOfficeId, name);
+        }
+        return folderRepository.findByParentIsNullAndNameIgnoreCase(name);
     }
 
     private String normalizeName(String name) {
@@ -267,7 +276,10 @@ public class FolderService {
 
     private void linkToParent(Map<Long, FolderNode> nodes, Folder folder) {
         if (folder.getParent() != null) {
-            nodes.get(folder.getParent().getId()).children().add(nodes.get(folder.getId()));
+            FolderNode parentNode = nodes.get(folder.getParent().getId());
+            if (parentNode != null) {
+                parentNode.children().add(nodes.get(folder.getId()));
+            }
         }
     }
 }

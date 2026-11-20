@@ -16,7 +16,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
-@PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
 public class UserController {
 
     private final UserService userService;
@@ -26,17 +25,26 @@ public class UserController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
     public List<UserResponse> listAll() {
         return userService.listAll();
     }
 
+    @GetMapping("/attorneys")
+    @PreAuthorize("hasAnyRole('ADMIN','PROTOCOLADOR','SUPER_ADMIN')")
+    public List<UserResponse> listAttorneys() {
+        return userService.listActiveAttorneys();
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
     public UserResponse create(@Valid @RequestBody CreateUserRequest request) {
         return userService.create(request);
     }
 
     @PatchMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
     public UserResponse update(@PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
         return userService.update(id, request);
     }

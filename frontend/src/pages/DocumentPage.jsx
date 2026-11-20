@@ -14,7 +14,7 @@ import { apiErrorMessage } from "../api/client";
 import { isExcelOrWord, kindLabel, statusLabel, verdictLabel } from "./model";
 import { DiffView } from "../components/DiffView";
 import { OnlyOfficeEditor } from "../components/OnlyOfficeEditor";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 export function DocumentPage() {
@@ -29,18 +29,18 @@ export function DocumentPage() {
   const [error, setError] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [tagsInput, setTagsInput] = useState("");
+  const loadSeqRef = useRef(0);
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  async function load() {
+  const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     try {
       const detail = await documentDetail(id);
       const history = await documentVersions(id);
       const reviewList = await documentReviews(id).catch(() => []);
       const changes = await documentStatusHistory(id);
+      if (seq !== loadSeqRef.current) {
+        return;
+      }
       setDocument(detail);
       setTagsInput((detail.tags ?? []).join(", "));
       setVersions(history);
@@ -50,29 +50,59 @@ export function DocumentPage() {
       setFromVersion(Math.max(1, current - 1));
       setToVersion(current);
       if (isExcelOrWord(detail.kind) && current > 1) {
-        setDiff(await documentDiff(id));
+        const computedDiff = await documentDiff(id);
+        if (seq === loadSeqRef.current) {
+          setDiff(computedDiff);
+        }
       } else {
         setDiff(null);
       }
     } catch (loadError) {
-      setError(apiErrorMessage(loadError));
+      if (seq === loadSeqRef.current) {
+        setError(apiErrorMessage(loadError));
+      }
     }
-  }
+  }, [id]);
 
   useEffect(() => {
-    let url;
-    if (document?.kind === "IMAGE" && versions[0]) {
-      documentPreview(versions[0].id).then((blob) => {
-        url = URL.createObjectURL(blob);
-        setPreviewUrl(url);
-      }).catch((previewError) => setError(apiErrorMessage(previewError)));
+    setDocument(null);
+    setError("");
+    load();
+    return () => {
+      loadSeqRef.current += 1;
+    };
+  }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl = "";
+    const latestVersion = versions[0];
+    if (document?.kind === "IMAGE" && latestVersion) {
+      documentPreview(latestVersion.id).then((blob) => {
+        const nextUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(nextUrl);
+          return;
+        }
+        createdUrl = nextUrl;
+        setPreviewUrl(nextUrl);
+      }).catch((previewError) => {
+        if (!cancelled) {
+          setError(apiErrorMessage(previewError));
+        }
+      });
     } else {
       setPreviewUrl("");
     }
-    return () => { if (url) URL.revokeObjectURL(url); };
+    return () => {
+      cancelled = true;
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
   }, [document?.kind, versions]);
 
-  const refreshAfterEdit = useCallback(() => { load(); }, [id]);
+  const refreshAfterEdit = useCallback(() => { load(); }, [load]);
   const reportEditorError = useCallback((message) => setError(message), []);
 
   async function saveTags(event) {

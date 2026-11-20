@@ -56,7 +56,8 @@ public class WorkflowService {
 
     @Transactional
     public DocumentResponse requestStatusChange(Long documentId, DocumentStatus to, String note, String username) {
-        Document document = documentRepository.findById(documentId)
+        Document document = documentRepository.findByIdForUpdate(documentId)
+                .or(() -> documentRepository.findById(documentId))
                 .orElseThrow(() -> new NotFoundException("Documento nao encontrado."));
         tenantScope.requireAccessToDocument(document);
         DocumentStatus from = document.getStatus();

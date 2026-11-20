@@ -111,9 +111,9 @@ function TreeItem({ folder, selectedId, onSelect, onRename, onDelete, onAssignRo
           <button type="button" title="Excluir" onClick={() => onDelete(folder)}><TrashIcon /></button>
         </span>
       </div>
-      {folder.children.length > 0 && (
+      {(folder.children ?? []).length > 0 && (
         <ul className="tree">
-          {folder.children.map((child) => (
+          {(folder.children ?? []).map((child) => (
             <TreeItem
               key={child.id}
               folder={child}

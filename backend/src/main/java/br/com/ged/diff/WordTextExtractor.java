@@ -1,7 +1,10 @@
 package br.com.ged.diff;
 
 import br.com.ged.exception.BusinessException;
+import org.apache.poi.ooxml.POIXMLException;
 import org.apache.poi.openxml4j.exceptions.NotOfficeXmlFileException;
+import org.apache.poi.openxml4j.util.ZipSecureFile;
+import org.apache.poi.util.RecordFormatException;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.springframework.stereotype.Component;
@@ -17,6 +20,13 @@ import java.util.Set;
 public class WordTextExtractor implements TextExtractor {
 
     private static final Set<String> SUPPORTED_EXTENSIONS = Set.of("docx");
+    private static final int MAX_PARAGRAPHS = 100_000;
+
+    static {
+        ZipSecureFile.setMinInflateRatio(0.01d);
+        ZipSecureFile.setMaxEntrySize(64L * 1024 * 1024);
+        ZipSecureFile.setMaxTextSize(10L * 1024 * 1024);
+    }
 
     @Override
     public Set<String> extensions() {
@@ -28,11 +38,12 @@ public class WordTextExtractor implements TextExtractor {
         try (InputStream stream = Files.newInputStream(file);
              XWPFDocument document = new XWPFDocument(stream)) {
             return document.getParagraphs().stream()
+                    .limit(MAX_PARAGRAPHS)
                     .map(XWPFParagraph::getText)
                     .filter(WordTextExtractor::containsContent)
                     .map(String::strip)
                     .toList();
-        } catch (IOException | NotOfficeXmlFileException exception) {
+        } catch (IOException | NotOfficeXmlFileException | POIXMLException | RecordFormatException exception) {
             throw new BusinessException("Falha ao ler o documento Word \"%s\".".formatted(file.getFileName()));
         }
     }

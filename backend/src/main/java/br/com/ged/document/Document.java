@@ -67,6 +67,9 @@ public class Document {
     @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DocumentStatusChange> statusChanges = new ArrayList<>();
 
+    @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<br.com.ged.review.Review> reviews = new ArrayList<>();
+
     @ElementCollection
     @CollectionTable(name = "document_tags", joinColumns = @JoinColumn(name = "document_id"))
     @Column(name = "tag", nullable = false, length = 40)

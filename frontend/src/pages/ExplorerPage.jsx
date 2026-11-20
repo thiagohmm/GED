@@ -3,9 +3,9 @@ import { assignRootFolder, createFolder, createProject,
   deleteFolder,
   documentsByFolder,
   folderTree,
+  listAttorneys,
   listOffices,
   listProjects,
-  listUsers,
   moveDocument,
   moveFolder,
   renameFolder,
@@ -15,7 +15,7 @@ import { apiErrorMessage } from "../api/client";
 import { kindLabel, statusLabel } from "./model";
 import { DOC_MIME, FolderTree } from "../components/FolderTree";
 import { useAuth } from "../auth/AuthContext";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 export function ExplorerPage() {
@@ -46,6 +46,7 @@ export function ExplorerPage() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [moveTargetId, setMoveTargetId] = useState("");
   const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const docLoadSeqRef = useRef(0);
 
   const loadTree = useCallback(async () => {
     try {
@@ -56,14 +57,20 @@ export function ExplorerPage() {
   }, []);
 
   const loadDocuments = useCallback(async (folderId) => {
+    const seq = ++docLoadSeqRef.current;
     if (!folderId) {
       setDocuments([]);
       return;
     }
     try {
-      setDocuments(await documentsByFolder(folderId));
+      const items = await documentsByFolder(folderId);
+      if (seq === docLoadSeqRef.current) {
+        setDocuments(items);
+      }
     } catch (loadError) {
-      setError(apiErrorMessage(loadError));
+      if (seq === docLoadSeqRef.current) {
+        setError(apiErrorMessage(loadError));
+      }
     }
   }, []);
 
@@ -73,16 +80,20 @@ export function ExplorerPage() {
 
   useEffect(() => {
     if (!canManageRoots) return;
-    const loadable = [listProjects(), listUsers()];
+    let cancelled = false;
+    const loadable = [listProjects(), listAttorneys()];
     if (isSuperAdmin) loadable.push(listOffices());
-    Promise.all(loadable).then(([allProjects, users, allOffices]) => {
+    Promise.all(loadable).then(([allProjects, activeAttorneys, allOffices]) => {
+      if (cancelled) return;
       setProjects(allProjects);
-      setAttorneys(users.filter((item) => item.role === "ADVOGADO" && item.enabled));
+      setAttorneys(activeAttorneys);
       if (allProjects.length) setProjectId(String(allProjects[0].id));
-      const firstAttorney = users.find((item) => item.role === "ADVOGADO" && item.enabled);
-      if (firstAttorney) setAttorneyId(String(firstAttorney.id));
+      if (activeAttorneys.length) setAttorneyId(String(activeAttorneys[0].id));
       if (allOffices) setOffices(allOffices);
-    }).catch((loadError) => setError(apiErrorMessage(loadError)));
+    }).catch((loadError) => {
+      if (!cancelled) setError(apiErrorMessage(loadError));
+    });
+    return () => { cancelled = true; };
   }, [canManageRoots, isSuperAdmin]);
 
   function handleSelect(folder) {
@@ -481,7 +492,7 @@ export function ExplorerPage() {
             </button>
           </form>
           <p className="muted small">
-            Word, Excel e PDF aceitam versões com o mesmo nome. Imagens ficam disponíveis somente para visualização.
+            Word e Excel aceitam novas versões com o mesmo nome. PDF pode ser editado pelo editor integrado e imagens ficam disponíveis para visualização.
           </p>
         </div>
 

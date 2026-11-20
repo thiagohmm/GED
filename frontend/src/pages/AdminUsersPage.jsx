@@ -156,32 +156,40 @@ export function AdminUsersPage() {
                 <td>{user.enabled ? "ativo" : "inativo"}</td>
                 <td className="small">{user.createdAt ? new Date(user.createdAt).toLocaleDateString("pt-BR") : "-"}</td>
                 <td className="row-actions">
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    onClick={() => patch(user, { enabled: !user.enabled },
-                      `Usuario "${user.username}" ${user.enabled ? "desativado" : "ativado"}.`)}
-                  >
-                    {user.enabled ? "Desativar" : "Ativar"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    onClick={() => {
-                      const roles = ["ADVOGADO", "REVISOR", "PROTOCOLADOR", "ADMIN"];
-                      const next = roles[(roles.indexOf(user.role) + 1) % roles.length];
-                      patch(user, { role: next }, `Perfil de "${user.username}" alterado para ${next}.`);
-                    }}
-                  >
-                    Trocar perfil
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    onClick={() => setResetUser(user)}
-                  >
-                    Resetar senha
-                  </button>
+                  {user.role !== "SUPER_ADMIN" && (isSuperAdmin || user.role !== "ADMIN") && user.username !== actor?.username && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => patch(user, { enabled: !user.enabled },
+                          `Usuario "${user.username}" ${user.enabled ? "desativado" : "ativado"}.`)}
+                      >
+                        {user.enabled ? "Desativar" : "Ativar"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => {
+                          const roles = isSuperAdmin
+                            ? ["ADVOGADO", "REVISOR", "PROTOCOLADOR", "ADMIN"]
+                            : ["ADVOGADO", "REVISOR", "PROTOCOLADOR"];
+                          const next = roles[(roles.indexOf(user.role) + 1) % roles.length];
+                          patch(user, { role: next }, `Perfil de "${user.username}" alterado para ${next}.`);
+                        }}
+                      >
+                        Trocar perfil
+                      </button>
+                    </>
+                  )}
+                  {(isSuperAdmin || user.role !== "ADMIN" || user.username === actor?.username) && (
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => setResetUser(user)}
+                    >
+                      Resetar senha
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

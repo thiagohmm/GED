@@ -158,6 +158,17 @@ class ReviewServiceTest {
     }
 
     @Test
+    void decidirComVereditoPendenteOuSuperadaEhRejeitado() {
+        Review review = reviewPendente(1, 1, 2);
+        when(reviewRepository.findById(56L)).thenReturn(Optional.of(review));
+
+        assertThrows(br.com.ged.exception.BusinessException.class,
+                () -> reviewService.decide(56L, new DecideReviewRequest(ReviewVerdict.PENDENTE, null), "revisora"));
+        assertThrows(br.com.ged.exception.BusinessException.class,
+                () -> reviewService.decide(56L, new DecideReviewRequest(ReviewVerdict.SUPERADA, null), "revisora"));
+    }
+
+    @Test
     void comentarAposDecisaoGeraConflito() {
         Review review = reviewDecidida(1, 1, 2);
         review.setDocument(document);

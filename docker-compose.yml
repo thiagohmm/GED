@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ged
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - ged-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +24,7 @@ services:
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: -Xms256m -Xmx512m
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - ged-esdata:/usr/share/elasticsearch/data
 
@@ -33,10 +33,10 @@ services:
     container_name: ged-onlyoffice
     environment:
       JWT_ENABLED: "true"
-      # O segredo do OnlyOffice e o mesmo do JWT da aplicacao.
-      JWT_SECRET: "${GED_JWT_SECRET:?Defina GED_JWT_SECRET no .env (openssl rand -hex 32)}"
+      # Usa segredo exclusivo separado do JWT de sessao dos usuarios da aplicacao.
+      JWT_SECRET: "${GED_EDITOR_JWT_SECRET:?Defina GED_EDITOR_JWT_SECRET no .env (openssl rand -hex 32)}"
     ports:
-      - "8090:80"
+      - "127.0.0.1:8090:80"
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

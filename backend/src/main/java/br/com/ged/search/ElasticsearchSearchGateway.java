@@ -145,7 +145,10 @@ public class ElasticsearchSearchGateway implements SearchGateway {
                 operations++;
             }
             if (operations > 0) {
-                client.bulk(bulk.build());
+                var bulkResponse = client.bulk(bulk.refresh(co.elastic.clients.elasticsearch._types.Refresh.True).build());
+                if (bulkResponse.errors()) {
+                    log.warn("Reindexacao bulk reportou erros parciais em um ou mais documentos.");
+                }
             }
             log.info("Reindexacao concluida: {} versoes enviadas ao Elasticsearch.", operations);
         } catch (IOException | ElasticsearchException exception) {
@@ -155,17 +158,21 @@ public class ElasticsearchSearchGateway implements SearchGateway {
 
     @Override
     public void indexVersion(DocumentVersion version, String folderPath) {
-        if (!enabled || version.getExtractedText() == null) {
+        if (!enabled || version.getExtractedText() == null || version.getId() == null) {
             return;
         }
-        try {
-            client.index(request -> request
-                    .index(INDEX)
-                    .id(String.valueOf(version.getId()))
-                    .document(toIndexedDocument(version, folderPath, officeIdOf(version))));
-        } catch (IOException | RuntimeException exception) {
-            log.warn("Falha ao indexar versao {}: {}", version.getId(), exception.getMessage());
-        }
+        String docId = String.valueOf(version.getId());
+        IndexedDocument payload = toIndexedDocument(version, folderPath, officeIdOf(version));
+        runAfterCommit(() -> {
+            try {
+                client.index(request -> request
+                        .index(INDEX)
+                        .id(docId)
+                        .document(payload));
+            } catch (IOException | RuntimeException exception) {
+                log.warn("Falha ao indexar versao {}: {}", docId, exception.getMessage());
+            }
+        });
     }
 
     @Override
@@ -173,12 +180,28 @@ public class ElasticsearchSearchGateway implements SearchGateway {
         if (!enabled) {
             return;
         }
-        try {
-            client.deleteByQuery(request -> request
-                    .index(INDEX)
-                    .query(query -> query.term(term -> term.field("documentId").value(documentId))));
-        } catch (IOException | ElasticsearchException exception) {
-            log.warn("Falha ao remover do indice o documento {}: {}", documentId, exception.getMessage());
+        runAfterCommit(() -> {
+            try {
+                client.deleteByQuery(request -> request
+                        .index(INDEX)
+                        .query(query -> query.term(term -> term.field("documentId").value(documentId))));
+            } catch (IOException | ElasticsearchException exception) {
+                log.warn("Falha ao remover do indice o documento {}: {}", documentId, exception.getMessage());
+            }
+        });
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            action.run();
+                        }
+                    });
+        } else {
+            action.run();
         }
     }
 
@@ -289,7 +312,7 @@ public class ElasticsearchSearchGateway implements SearchGateway {
                         ? DocumentStatus.EDITANDO.name() : version.getDocument().getStatus().name(),
                 version.getVersionNumber(),
                 version.getUploadedBy(),
-                version.getUploadedAt(),
+                version.getUploadedAt() == null ? java.time.Instant.now() : version.getUploadedAt(),
                 version.getExtractedText());
     }
 

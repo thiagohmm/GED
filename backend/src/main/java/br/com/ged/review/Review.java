@@ -66,6 +66,9 @@ public class Review {
     @Column(columnDefinition = "text")
     private String summary;
 
+    @jakarta.persistence.OneToMany(mappedBy = "review", cascade = jakarta.persistence.CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<ReviewComment> comments = new java.util.ArrayList<>();
+
     public Review(Document document, int round, int fromVersion, int toVersion, String createdBy) {
         this.document = document;
         this.round = round;

@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         properties = {
                 "spring.profiles.active=prod",
                 "ged.jwt.secret=test-secret-integracao-0123456789-0123456789-0123456789",
+                "ged.editor.jwt-secret=test-editor-secret-integracao-0123456789-0123456789",
                 "ged.seed.super-admin-username=root",
                 "ged.seed.super-admin-password=rootpass123",
                 "ged.elasticsearch.enabled=false"
@@ -68,6 +69,11 @@ class FlywaySchemaTest {
         assertEquals("1", row.get("version"));
         assertEquals("init", row.get("description"));
         assertEquals(1, ((Number) row.get("success")).intValue());
+
+        Map<String, Object> rowV2 = jdbc.queryForMap(
+                "SELECT version, success FROM flyway_schema_history WHERE version = '2'");
+        assertEquals("2", rowV2.get("version"));
+        assertEquals(1, ((Number) rowV2.get("success")).intValue());
     }
 
     @Test

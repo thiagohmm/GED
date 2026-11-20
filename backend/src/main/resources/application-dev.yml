@@ -1,7 +1,9 @@
-# Perfil de desenvolvimento (default). Segredos fracos sao permitidos APENAS aqui.
+# Perfil de desenvolvimento (ative com SPRING_PROFILES_ACTIVE=dev). Segredos fracos sao permitidos APENAS aqui.
 ged:
   jwt:
     secret: ${GED_JWT_SECRET:troque-este-segredo-em-producao-com-no-minimo-32-caracteres}
+  editor:
+    jwt-secret: ${GED_EDITOR_JWT_SECRET:troque-este-segredo-do-editor-em-producao-min-32}
   seed:
     enabled: true
     admin-username: ${GED_SEED_ADMIN_USERNAME:admin}

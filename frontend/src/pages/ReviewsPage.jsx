@@ -2,23 +2,27 @@ import { reviewQueue } from "../api/ged";
 import { apiErrorMessage } from "../api/client";
 import { statusLabel, verdictLabel } from "./model";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 export function ReviewsPage() {
+  const location = useLocation();
   const [queue, setQueue] = useState(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState(location.state?.notice ?? "");
 
   useEffect(() => {
-    loadQueue();
+    let cancelled = false;
+    reviewQueue()
+      .then((data) => {
+        if (!cancelled) setQueue(data);
+      })
+      .catch((queueError) => {
+        if (!cancelled) setError(apiErrorMessage(queueError));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  async function loadQueue() {
-    try {
-      setQueue(await reviewQueue());
-    } catch (queueError) {
-      setError(apiErrorMessage(queueError));
-    }
-  }
 
   if (error) {
     return <section className="main-panel wide"><div className="error-banner">{error}</div></section>;
@@ -31,6 +35,12 @@ export function ReviewsPage() {
     <section className="main-panel wide">
       <p className="eyebrow">Fila</p>
       <h1>Revisão de documentos</h1>
+      {notice && (
+        <div className="notice-banner">
+          <span>{notice}</span>
+          <button type="button" className="btn btn-ghost" onClick={() => setNotice("")}>fechar</button>
+        </div>
+      )}
 
       <div className="panel-card">
         <h2>Aguardando decisão ({queue.pending.length})</h2>

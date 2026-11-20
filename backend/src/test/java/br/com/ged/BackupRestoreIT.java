@@ -50,6 +50,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
         properties = {
                 "spring.profiles.active=prod",
                 "ged.jwt.secret=test-secret-integracao-0123456789-0123456789-0123456789",
+                "ged.editor.jwt-secret=test-editor-secret-integracao-0123456789-0123456789",
                 "ged.seed.super-admin-username=root",
                 "ged.seed.super-admin-password=rootpass123",
                 "ged.elasticsearch.enabled=true"
@@ -103,8 +104,11 @@ class BackupRestoreIT {
         rootToken = login("root", "rootpass123");
         Map<?, ?> office = post("/api/admin/offices", rootToken, Map.of("name", "Escritorio Backup"));
         officeId = idOf(office);
+        Long attorneyId = idOf(post("/api/users", rootToken,
+                Map.of("username", "advbackup", "password", "advpass123", "role", "ADVOGADO", "officeId", officeId)));
         projectId = idOf(post("/api/projects", rootToken, Map.of("name", "Processo Backup", "officeId", officeId)));
-        folderId = idOf(post("/api/folders", rootToken, Map.of("name", "Pasta", "projectId", projectId)));
+        folderId = idOf(post("/api/folders", rootToken,
+                Map.of("name", "Pasta", "projectId", projectId, "assignedAttorneyId", attorneyId)));
         upload(folderId, rootToken, "documento-original.png");
         List<?> documents = getEntity("/api/folders/" + folderId + "/documents", rootToken, List.class).getBody();
         assertEquals(1, documents.size());
@@ -171,7 +175,7 @@ class BackupRestoreIT {
         ResponseEntity<byte[]> download = getEntity("/api/versions/" + restoredVersion + "/download",
                 token, byte[].class);
         assertEquals(200, download.getStatusCode().value());
-        assertEquals(pngBytes(), download.getBody());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(pngBytes(), download.getBody());
 
         // integridade: 100% ok apos restore
         ResponseEntity<Map> integrity = getEntity("/api/admin/integrity", token, Map.class);

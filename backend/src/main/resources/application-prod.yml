@@ -1,5 +1,5 @@
 # Perfil de producao: sem defaults para segredos/senhas.
-#  - GED_JWT_SECRET e obrigatoria (>= 32 chars; o secret do dev e rejeitado).
+#  - GED_JWT_SECRET e GED_EDITOR_JWT_SECRET sao obrigatorias (>= 32 chars, distintas e diferentes do dev).
 #  - Se nao existir SUPER_ADMIN, GED_SUPER_ADMIN_USERNAME e GED_SUPER_ADMIN_PASSWORD sao obrigatorias.
 #  - O seed do dev (admin/admin123) nunca roda aqui.
 spring:
@@ -9,6 +9,8 @@ spring:
 ged:
   jwt:
     secret: ${GED_JWT_SECRET:}
+  editor:
+    jwt-secret: ${GED_EDITOR_JWT_SECRET:}
   seed:
     enabled: false
     super-admin-username: ${GED_SUPER_ADMIN_USERNAME:}

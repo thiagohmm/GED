@@ -2,6 +2,7 @@ package br.com.ged.review;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface ReviewCommentRepository extends JpaRepository<ReviewComment, Long> {
@@ -9,4 +10,6 @@ public interface ReviewCommentRepository extends JpaRepository<ReviewComment, Lo
     List<ReviewComment> findByReviewOrderByCreatedAtAsc(Review review);
 
     long countByReview(Review review);
+
+    void deleteByReviewIn(Collection<Review> reviews);
 }

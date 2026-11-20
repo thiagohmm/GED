@@ -87,6 +87,11 @@ public class ReviewService {
         if (document.getStatus() != DocumentStatus.EM_REVISAO) {
             throw new ConflictException("O documento desta revisao nao esta mais em revisao.");
         }
+        if (request.verdict() != ReviewVerdict.APROVADO
+                && request.verdict() != ReviewVerdict.CORRECOES_SOLICITADAS) {
+            throw new br.com.ged.exception.BusinessException(
+                    "O veredito da revisao deve ser APROVADO ou CORRECOES_SOLICITADAS.");
+        }
         DocumentStatus target = request.verdict() == ReviewVerdict.APROVADO
                 ? DocumentStatus.PRONTO_PARA_PROTOCOLO
                 : DocumentStatus.EDITANDO;

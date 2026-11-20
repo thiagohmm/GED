@@ -51,6 +51,7 @@ public class FolderController {
     }
 
     @PatchMapping("/{id}/assignment")
+    @PreAuthorize("hasAnyRole('ADMIN','PROTOCOLADOR','SUPER_ADMIN')")
     public FolderNode assignRoot(@PathVariable Long id, @Valid @RequestBody AssignRootFolderRequest request) {
         return folderService.assignRoot(id, request);
     }

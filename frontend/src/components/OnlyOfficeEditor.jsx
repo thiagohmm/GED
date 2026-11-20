@@ -4,6 +4,21 @@ import { apiErrorMessage } from "../api/client";
 
 const RETRY_INTERVAL_MS = 5000;
 const MAX_RETRIES = 36;
+let loadedDocsApiOrigin = null;
+
+function buildSafeDocsApiUrl(documentServerUrl) {
+  let parsed;
+  try {
+    parsed = new URL(documentServerUrl, window.location.origin);
+  } catch {
+    throw new Error("url-invalida");
+  }
+  if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password) {
+    throw new Error("url-invalida");
+  }
+  const base = `${parsed.origin}${parsed.pathname.replace(/\/$/, "")}`;
+  return { origin: parsed.origin, scriptUrl: `${base}/web-apps/apps/api/documents/api.js` };
+}
 
 export function OnlyOfficeEditor({ documentId, currentVersion, mode = "view", onSaved, onError }) {
   const placeholderId = `onlyoffice-${mode}-${documentId}`;
@@ -25,16 +40,21 @@ export function OnlyOfficeEditor({ documentId, currentVersion, mode = "view", on
       script = null;
     }
 
-    async function loadDocsApi(scriptUrl) {
+    async function loadDocsApi(origin, scriptUrl) {
+      if (window.DocsAPI && loadedDocsApiOrigin === origin) {
+        return;
+      }
       removeScript();
       script = document.createElement("script");
       script.src = scriptUrl;
       script.async = true;
       document.head.appendChild(script);
       await new Promise((resolve, reject) => {
-        script.addEventListener("load", resolve, { once: true });
+        script.addEventListener("load", () => {
+          loadedDocsApiOrigin = origin;
+          resolve();
+        }, { once: true });
         script.addEventListener("error", () => reject(new Error("script-indisponivel")), { once: true });
-        if (window.DocsAPI) resolve();
       });
     }
 
@@ -45,12 +65,14 @@ export function OnlyOfficeEditor({ documentId, currentVersion, mode = "view", on
         const config = await editorConfig(documentId, mode);
         if (disposed) return;
         setStatus("Conectando ao editor integrado...");
-        const scriptUrl = `${config.documentServerUrl.replace(/\/$/, "")}/web-apps/apps/api/documents/api.js`;
+        const { origin, scriptUrl } = buildSafeDocsApiUrl(config.documentServerUrl);
         try {
-          await loadDocsApi(scriptUrl);
+          await loadDocsApi(origin, scriptUrl);
         } catch {
           if (attempt < MAX_RETRIES) {
-            setStatus(`Aguardando o servidor de documentos iniciar (tentativa ${attempt + 1} de ${MAX_RETRIES})...`);
+            if (!disposed) {
+              setStatus(`Aguardando o servidor de documentos iniciar (tentativa ${attempt + 1} de ${MAX_RETRIES})...`);
+            }
             await sleep(RETRY_INTERVAL_MS);
             if (!disposed) await start(attempt + 1);
             return;
@@ -61,16 +83,25 @@ export function OnlyOfficeEditor({ documentId, currentVersion, mode = "view", on
         editor.current = new window.DocsAPI.DocEditor(placeholderId, {
           ...config.config,
           events: {
-            onDocumentReady: () => setStatus(mode === "edit"
-              ? "Editor pronto. Ao fechar, as alterações serão salvas como uma nova versão."
-              : "Documento pronto."),
-            onError: (event) => setStatus(`O editor reportou um erro${event?.data ? ` (${event.data})` : ""}.`)
+            onDocumentReady: () => {
+              if (!disposed) {
+                setStatus(mode === "edit"
+                  ? "Editor pronto. Ao fechar, as alterações serão salvas como uma nova versão."
+                  : "Documento pronto.");
+              }
+            },
+            onError: (event) => {
+              if (!disposed) {
+                setStatus(`O editor reportou um erro${event?.data ? ` (${event.data})` : ""}.`);
+              }
+            }
           }
         });
         if (mode === "edit") {
           poll = window.setInterval(async () => {
             try {
               const latest = await documentDetail(documentId);
+              if (disposed) return;
               if (latest.currentVersion > currentVersion) {
                 window.clearInterval(poll);
                 setStatus("Alterações salvas em uma nova versão.");
@@ -86,6 +117,9 @@ export function OnlyOfficeEditor({ documentId, currentVersion, mode = "view", on
         if (String(error?.message).includes("servidor-indisponivel")) {
           setStatus("Servidor de documentos indisponível.");
           onError?.("Verifique se o servidor ONLYOFFICE está disponível.");
+        } else if (String(error?.message).includes("url-invalida")) {
+          setStatus("URL do servidor de documentos inválida.");
+          onError?.("Configuração inválida do servidor ONLYOFFICE.");
         } else {
           setStatus("Não foi possível abrir o editor integrado.");
           onError?.(apiErrorMessage(error) || "Verifique se o servidor ONLYOFFICE está disponível.");

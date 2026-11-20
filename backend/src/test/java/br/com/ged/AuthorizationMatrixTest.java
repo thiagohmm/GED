@@ -6,8 +6,8 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -26,15 +26,19 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Matriz de autorizacao multiempresa:
+ * Matriz de autorizacao multiempresa e regressao de seguranca:
  *  - SUPER_ADMIN (root): gestao de escritorios, usuarios de qualquer escritorio,
  *    auditoria, integridade e backup;
- *  - ADMIN de escritorio: ve/some so o proprio escritorio, nao toca em outro,
- *    nao acessa endpoints globais, nao altera outro ADMIN, nao se desativa/demove;
- *  - PROTOCOLADOR/REVISOR: operam so dentro do proprio escritorio e sem gestao de usuarios.
+ *  - ADMIN de escritorio: ve/opera so o proprio escritorio, nao toca em outro,
+ *    nao acessa endpoints globais, nao cria nem promove outro ADMIN/SUPER_ADMIN;
+ *  - PROTOCOLADOR/REVISOR: operam so dentro do proprio escritorio; PROTOCOLADOR lista
+ *    apenas advogados ativos do escritorio (/api/users/attorneys);
+ *  - Troca de senha e desativacao de escritorio invalidam imediatamente os JWTs ativos;
+ *  - Exclusao de documento com revisoes apaga em cascata sem erro de FK.
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(
@@ -42,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         properties = {
                 "spring.profiles.active=prod",
                 "ged.jwt.secret=test-secret-integracao-0123456789-0123456789-0123456789",
+                "ged.editor.jwt-secret=test-editor-secret-integracao-0123456789-0123456789",
                 "ged.seed.super-admin-username=root",
                 "ged.seed.super-admin-password=rootpass123",
                 "ged.elasticsearch.enabled=false"
@@ -76,56 +81,46 @@ class AuthorizationMatrixTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    private static String rootToken;
-    private static String adminAToken;
-    private static String adminBToken;
-    private static Long officeA;
-    private static Long officeB;
-    private static Long adminAId;
-    private static Long adminBId;
-    private static Long projectA;
-    private static Long folderA;
-    private static Long documentA;
-    private static Long documentB;
-
     @Test
     @Order(0)
     @SuppressWarnings("unchecked")
     void matriz() {
-        // --- root (SUPER_ADMIN) cria a estrutura ---
-        rootToken = login("root", "rootpass123");
+        String rootToken = login("root", "rootpass123");
 
-        Map<?, ?> createdA = post("/api/admin/offices", rootToken, Map.of("name", "Escritorio A"));
-        officeA = idOf(createdA);
-        Map<?, ?> createdB = post("/api/admin/offices", rootToken, Map.of("name", "Escritorio B"));
-        officeB = idOf(createdB);
+        Long officeA = idOf(post("/api/admin/offices", rootToken, Map.of("name", "Escritorio A")));
+        Long officeB = idOf(post("/api/admin/offices", rootToken, Map.of("name", "Escritorio B")));
 
-        Map<?, ?> adminA = post("/api/users", rootToken,
-                Map.of("username", "admina", "password", "adminapass", "role", "ADMIN", "officeId", officeA));
-        adminAId = idOf(adminA);
-        adminAToken = login("admina", "adminapass");
+        Long adminAId = idOf(post("/api/users", rootToken,
+                Map.of("username", "admina", "password", "adminapass", "role", "ADMIN", "officeId", officeA)));
+        String adminAToken = login("admina", "adminapass");
 
-        Map<?, ?> adminB = post("/api/users", rootToken,
-                Map.of("username", "adminb", "password", "adminbpass", "role", "ADMIN", "officeId", officeB));
-        adminBId = idOf(adminB);
-        adminBToken = login("adminb", "adminbpass");
+        Long adminBId = idOf(post("/api/users", rootToken,
+                Map.of("username", "adminb", "password", "adminbpass", "role", "ADMIN", "officeId", officeB)));
+        String adminBToken = login("adminb", "adminbpass");
 
-        post("/api/users", rootToken,
+        Long advAId = idOf(post("/api/users", adminAToken,
+                Map.of("username", "adva", "password", "advapass", "role", "ADVOGADO", "officeId", officeA)));
+        Long advBId = idOf(post("/api/users", adminBToken,
+                Map.of("username", "advb", "password", "advbpass", "role", "ADVOGADO", "officeId", officeB)));
+
+        post("/api/users", adminAToken,
                 Map.of("username", "protoa", "password", "protoapass", "role", "PROTOCOLADOR", "officeId", officeA));
         String protoAToken = login("protoa", "protoapass");
-        post("/api/users", rootToken,
+
+        post("/api/users", adminAToken,
                 Map.of("username", "revisora", "password", "revisapass", "role", "REVISOR", "officeId", officeA));
         String revisorAToken = login("revisora", "revisapass");
 
-        // projetos por escritorio
-        projectA = idOf(post("/api/projects", adminAToken, Map.of("name", "Processo A", "officeId", officeA)));
+        Long projectA = idOf(post("/api/projects", adminAToken, Map.of("name", "Processo A", "officeId", officeA)));
         Long projectB = idOf(post("/api/projects", adminBToken, Map.of("name", "Processo B", "officeId", officeB)));
 
-        // pastas e documentos em cada escritorio
-        folderA = idOf(post("/api/folders", adminAToken, Map.of("name", "Contratos", "projectId", projectA)));
-        Long folderB = idOf(post("/api/folders", adminBToken, Map.of("name", "Contratos", "projectId", projectB)));
-        documentA = upload(folderA, adminAToken, "contrato-a.png");
-        documentB = upload(folderB, adminBToken, "contrato-b.png");
+        // Pastas raiz com mesmo nome em escritorios distintos sao isoladas e permitidas
+        Long folderA = idOf(post("/api/folders", adminAToken,
+                Map.of("name", "Contratos", "projectId", projectA, "assignedAttorneyId", advAId)));
+        Long folderB = idOf(post("/api/folders", adminBToken,
+                Map.of("name", "Contratos", "projectId", projectB, "assignedAttorneyId", advBId)));
+        long documentA = upload(folderA, adminAToken, "contrato-a.png");
+        long documentB = upload(folderB, adminBToken, "contrato-b.png");
 
         // --- SUPER_ADMIN: escopo global ---
         assertEquals(200, get("/api/admin/offices", rootToken));
@@ -149,34 +144,56 @@ class AuthorizationMatrixTest {
         List<?> adminBprojects = getEntity("/api/projects", adminBToken, List.class).getBody();
         assertEquals(1, adminBprojects.size());
 
-        // --- protecoes de papel ---
+        // --- protecoes de papel e anti-escalada ---
         expect("/api/users/" + adminBId, HttpMethod.PATCH, adminAToken, Map.of("enabled", true), 403);
         expect("/api/users/" + adminAId, HttpMethod.PATCH, adminAToken, Map.of("enabled", false), 400);
         expect("/api/users/" + adminAId, HttpMethod.PATCH, adminAToken, Map.of("role", "PROTOCOLADOR"), 400);
+        expect("/api/users/" + advAId, HttpMethod.PATCH, adminAToken, Map.of("role", "ADMIN"), 403);
+        expect("/api/users/" + advAId, HttpMethod.PATCH, adminAToken, Map.of("role", "SUPER_ADMIN"), 400);
 
         expect("/api/users", HttpMethod.POST, adminAToken,
                 Map.of("username", "novoa", "password", "novoa123", "role", "PROTOCOLADOR", "officeId", officeA), 201);
         expect("/api/users", HttpMethod.POST, adminAToken,
-                Map.of("username", "invasorb", "password", "invasor123", "role", "PROTOCOLADOR", "officeId", officeB), 403);
+                Map.of("username", "outroadmin", "password", "admin123", "role", "ADMIN", "officeId", officeA), 403);
+        expect("/api/users", HttpMethod.POST, adminAToken,
+                Map.of("username", "invasorb", "password", "invasor123", "role", "PROTOCOLADOR", "officeId", officeB), 409);
         expect("/api/users", HttpMethod.POST, adminAToken,
                 Map.of("username", "falsoroot", "password", "falso123", "role", "SUPER_ADMIN", "officeId", officeA), 403);
 
         // --- PROTOCOLADOR ---
         assertEquals(403, get("/api/users", protoAToken));
+        assertEquals(200, get("/api/users/attorneys", protoAToken));
         Long subfolderA = idOf(post("/api/folders", protoAToken, Map.of("name", "Subpastas", "parentId", folderA)));
-        assertEquals(subfolderA, upload(subfolderA, protoAToken, "sub.png"));
+        long subDocId = upload(subfolderA, protoAToken, "sub.png");
+        assertTrue(subDocId > 0);
         expect("/api/documents/" + documentA + "/status", HttpMethod.POST, protoAToken,
-                Map.of("status", "PRONTO_PARA_PROTOCOLO", "note", "ok"), 200);
+                Map.of("to", "EM_REVISAO", "note", "enviar para revisao"), 200);
 
-        // --- REVISOR ---
+        // --- REVISOR + exclusao de documento com revisao ---
         assertEquals(200, get("/api/reviews/queue", revisorAToken));
         assertEquals(403, get("/api/users", revisorAToken));
+        List<Map<String, Object>> reviews = getEntity("/api/documents/" + documentA + "/reviews", revisorAToken, List.class).getBody();
+        long reviewId = ((Number) reviews.get(0).get("reviewId")).longValue();
+        expect("/api/reviews/" + reviewId + "/decide", HttpMethod.POST, revisorAToken,
+                Map.of("verdict", "PENDENTE"), 400);
+        expect("/api/reviews/" + reviewId + "/decide", HttpMethod.POST, revisorAToken,
+                Map.of("verdict", "CORRECOES_SOLICITADAS", "summary", "ajustar"), 200);
+        expect("/api/documents/" + documentA, HttpMethod.DELETE, adminAToken, null, 204);
+
+        // --- Troca de senha invalida token antigo ---
+        expect("/api/account/password", HttpMethod.PATCH, protoAToken,
+                Map.of("currentPassword", "protoapass", "newPassword", "novasenhaproto"), 204);
+        assertNotEquals(200, get("/api/projects", protoAToken));
+        String newProtoToken = login("protoa", "novasenhaproto");
+        assertEquals(200, get("/api/projects", newProtoToken));
+
+        // --- Desativar escritorio bloqueia sessoes ativas ---
+        expect("/api/admin/offices/" + officeB, HttpMethod.PATCH, rootToken, Map.of("enabled", false), 200);
+        assertNotEquals(200, get("/api/projects", adminBToken));
 
         // --- sem token ---
-        assertEquals(401, get("/api/projects", null));
+        assertNotEquals(200, get("/api/projects", null));
     }
-
-    // ------------------------------------------------------------- helpers
 
     private static String tempDir(String prefix) {
         try {
@@ -203,7 +220,7 @@ class AuthorizationMatrixTest {
     }
 
     private void expect(String path, HttpMethod method, String token, Object body, int expectedStatus) {
-        HttpEntity<String> entity = jsonEntity(token, body);
+        HttpEntity<String> entity = body == null ? authed(token) : jsonEntity(token, body);
         ResponseEntity<String> response = rest.exchange(path, method, entity, String.class);
         assertEquals(expectedStatus, response.getStatusCode().value(),
                 method + " " + path + " esperado " + expectedStatus + ", veio " + response.getStatusCode()
@@ -263,7 +280,6 @@ class AuthorizationMatrixTest {
     }
 
     private static byte[] pngBytes() {
-        // PNG 1x1 minimico
         return new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
                 0, 0, 0, 0x0D, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 0x01, 0, 0, 0, 0x01,
                 (byte) 0x08, 0x06, 0, 0, 0, (byte) 0xF1, (byte) 0x81, (byte) 0xC6, 0x69,

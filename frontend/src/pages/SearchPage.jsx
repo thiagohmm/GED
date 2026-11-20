@@ -20,6 +20,8 @@ export function SearchPage() {
 
   const runSearch = useCallback(async (term) => {
     if (!term.trim()) {
+      setResults(null);
+      setError("");
       return;
     }
     setLoading(true);

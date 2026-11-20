@@ -94,8 +94,10 @@ export async function downloadVersion(versionId, fileName) {
   const link = document.createElement("a");
   link.href = objectUrl;
   link.download = fileName;
+  document.body.appendChild(link);
   link.click();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
 }
 
 export async function searchDocuments(query, filters = {}) {
@@ -158,6 +160,11 @@ export async function documentReviews(id) {
 
 export async function listUsers() {
   const { data } = await api.get("/users");
+  return data;
+}
+
+export async function listAttorneys() {
+  const { data } = await api.get("/users/attorneys");
   return data;
 }
 

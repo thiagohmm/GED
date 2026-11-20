@@ -22,9 +22,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -91,8 +94,10 @@ public class DocumentService {
         DocumentKind kind = DocumentKind.fromFileName(documentName)
                 .orElseThrow(() -> new InvalidFileTypeException(documentName));
 
-        DocumentResponse response = documentRepository.findByFolderIdAndNameIgnoreCase(folderId, documentName)
-                .<DocumentResponse>map(document -> addVersionTo(document, kind, file, changeDescription, username))
+        Optional<Document> existing = documentRepository.findByFolderIdAndNameIgnoreCaseForUpdate(folderId, documentName)
+                .or(() -> documentRepository.findByFolderIdAndNameIgnoreCase(folderId, documentName));
+        DocumentResponse response = existing
+                .map(document -> addVersionTo(document, kind, file, changeDescription, username))
                 .orElseGet(() -> createDocument(folder, documentName, kind, file, changeDescription, username));
         auditEventService.record("DOCUMENT_UPLOAD", "DOCUMENT", String.valueOf(response.id()),
                 AuditEventService.details("name", response.name(), "folderId", folderId,
@@ -118,7 +123,7 @@ public class DocumentService {
 
     @Transactional
     public DocumentResponse updateTags(Long documentId, List<String> requestedTags) {
-        Document document = findById(documentId);
+        Document document = findByIdForUpdate(documentId);
         tenantScope.requireAccessToDocument(document);
         List<String> tags = requestedTags == null ? List.of() : requestedTags.stream()
                 .map(String::strip)
@@ -165,6 +170,14 @@ public class DocumentService {
         DocumentVersion version = versionRepository.findById(versionId)
                 .orElseThrow(() -> new NotFoundException("Versao nao encontrada."));
         tenantScope.requireAccessToDocument(version.getDocument());
+        return readStoredVersion(version);
+    }
+
+    VersionDownload downloadVersionForEditor(DocumentVersion version) {
+        return readStoredVersion(version);
+    }
+
+    private VersionDownload readStoredVersion(DocumentVersion version) {
         Path stored = storageService.resolveStored(version.getFilePath());
         try {
             return new VersionDownload(version.getDocument().getName(), Files.readAllBytes(stored));
@@ -175,13 +188,25 @@ public class DocumentService {
 
     @Transactional
     public void delete(Long documentId) {
-        Document document = findById(documentId);
+        Document document = findByIdForUpdate(documentId);
         tenantScope.requireAccessToDocument(document);
-        auditEventService.record("DOCUMENT_DELETE", "DOCUMENT", String.valueOf(document.getId()),
-                AuditEventService.details("name", document.getName()));
+        if (document.getStatus() == DocumentStatus.PROTOCOLADO) {
+            throw new ConflictException("Documentos protocolados nao podem ser excluidos.");
+        }
+        String documentName = document.getName();
+        List<Review> reviews = reviewRepository.findByDocumentOrderByRoundAsc(document);
+        if (!reviews.isEmpty()) {
+            reviewRepository.deleteAll(reviews);
+        }
         documentRepository.delete(document);
-        storageService.deleteDocumentDirectory(documentId);
+        documentRepository.flush();
+
         searchGateway.deleteVersions(documentId);
+        runAfterCommit(() -> {
+            storageService.deleteDocumentDirectory(documentId);
+            auditEventService.record("DOCUMENT_DELETE", "DOCUMENT", String.valueOf(documentId),
+                    AuditEventService.details("name", documentName));
+        });
     }
 
     @Transactional
@@ -195,7 +220,7 @@ public class DocumentService {
 
     @Transactional
     public DocumentResponse move(Long documentId, Long targetFolderId) {
-        Document document = findById(documentId);
+        Document document = findByIdForUpdate(documentId);
         tenantScope.requireAccessToDocument(document);
         Folder target = folderService.findById(targetFolderId);
         tenantScope.requireAccessToFolder(target);
@@ -251,6 +276,7 @@ public class DocumentService {
 
     private DocumentResponse createDocument(Folder folder, String documentName, DocumentKind kind,
                                             MultipartFile file, String changeDescription, String username) {
+        validateMultipartSignature(kind, documentName, file);
         Document document = documentRepository.saveAndFlush(new Document(folder, documentName, kind, username));
         createVersion(document, 1, file, changeDescription, username, Optional.empty());
         return DocumentResponse.from(document);
@@ -259,6 +285,7 @@ public class DocumentService {
     private void createVersion(Document document, int versionNumber, MultipartFile file,
                                String changeDescription, String username,
                                Optional<DocumentVersion> previousVersion) {
+        validateMultipartSignature(document.getKind(), document.getName(), file);
         StoredFile stored = storageService.store(document.getId(), versionNumber, document.getName(), file);
         if (previousVersion.map(version -> version.getSha256().equals(stored.sha256())).orElse(false)) {
             storageService.deleteStoredFile(stored.relativePath());
@@ -269,22 +296,23 @@ public class DocumentService {
         version.setStatus(document.getStatus());
         try {
             attachAnalysis(version, previousVersion);
+            versionRepository.save(version);
         } catch (RuntimeException exception) {
             storageService.deleteStoredFile(stored.relativePath());
             throw exception;
         }
-        versionRepository.save(version);
         document.getVersions().add(version);
         searchGateway.indexVersion(version, folderPathOf(document));
     }
 
     @Transactional
     public DocumentResponse saveEditedVersion(Long documentId, byte[] content, String username) {
-        Document document = findById(documentId);
+        Document document = findByIdForUpdate(documentId);
         if (document.getKind() != DocumentKind.WORD && document.getKind() != DocumentKind.EXCEL
                 && document.getKind() != DocumentKind.PDF) {
             throw new ConflictException("O editor integrado aceita Word, Excel e PDF.");
         }
+        validateBytesSignature(document.getKind(), document.getName(), content);
         DocumentVersion previous = versionRepository.findTopByDocumentOrderByVersionNumberDesc(document)
                 .orElseThrow(() -> new IllegalStateException("Documento sem versao registrada."));
         int versionNumber = document.getCurrentVersion() + 1;
@@ -298,16 +326,74 @@ public class DocumentService {
         version.setStatus(document.getStatus());
         try {
             attachAnalysis(version, Optional.of(previous));
+            versionRepository.save(version);
         } catch (RuntimeException exception) {
             storageService.deleteStoredFile(stored.relativePath());
             throw exception;
         }
-        versionRepository.save(version);
         document.getVersions().add(version);
         document.setCurrentVersion(versionNumber);
         supersedePendingReview(document, versionNumber, username);
         searchGateway.indexVersion(version, folderPathOf(document));
         return DocumentResponse.from(document);
+    }
+
+    private void validateMultipartSignature(DocumentKind kind, String documentName, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException("O arquivo enviado esta vazio.");
+        }
+        try (InputStream in = file.getInputStream()) {
+            byte[] header = in.readNBytes(8);
+            validateHeaderMagicBytes(kind, documentName, header);
+        } catch (IOException exception) {
+            throw new UncheckedIOException("Falha ao inspecionar o arquivo enviado.", exception);
+        }
+    }
+
+    private void validateBytesSignature(DocumentKind kind, String documentName, byte[] content) {
+        if (content == null || content.length == 0) {
+            throw new BusinessException("O arquivo enviado esta vazio.");
+        }
+        int len = Math.min(content.length, 8);
+        byte[] header = new byte[len];
+        System.arraycopy(content, 0, header, 0, len);
+        validateHeaderMagicBytes(kind, documentName, header);
+    }
+
+    static void validateHeaderMagicBytes(DocumentKind kind, String documentName, byte[] header) {
+        boolean matches = switch (kind) {
+            case WORD, EXCEL -> header.length >= 4
+                    && header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04;
+            case PDF -> header.length >= 5
+                    && header[0] == '%' && header[1] == 'P' && header[2] == 'D' && header[3] == 'F' && header[4] == '-';
+            case IMAGE -> isPng(header) || isJpeg(header);
+        };
+        if (!matches) {
+            throw new InvalidFileTypeException(documentName);
+        }
+    }
+
+    private static boolean isPng(byte[] header) {
+        return header.length >= 4
+                && header[0] == (byte) 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47;
+    }
+
+    private static boolean isJpeg(byte[] header) {
+        return header.length >= 3
+                && header[0] == (byte) 0xFF && header[1] == (byte) 0xD8 && header[2] == (byte) 0xFF;
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 
     private void attachAnalysis(DocumentVersion version, Optional<DocumentVersion> previousVersion) {
@@ -398,6 +484,12 @@ public class DocumentService {
                 .orElseThrow(() -> new NotFoundException("Documento nao encontrado."));
     }
 
+    private Document findByIdForUpdate(Long documentId) {
+        return documentRepository.findByIdForUpdate(documentId)
+                .or(() -> documentRepository.findById(documentId))
+                .orElseThrow(() -> new NotFoundException("Documento nao encontrado."));
+    }
+
     private String cleanChangeDescription(String changeDescription) {
         if (changeDescription == null || changeDescription.isBlank()) {
             return null;
@@ -429,7 +521,7 @@ public class DocumentService {
         }
     }
 
-    private String sanitizeFileName(String rawFileName) {
+    String sanitizeFileName(String rawFileName) {
         if (rawFileName == null || rawFileName.isBlank()) {
             throw new InvalidFileTypeException(null);
         }
@@ -444,6 +536,9 @@ public class DocumentService {
         if (name.length() > MAX_FILE_NAME_LENGTH) {
             int dotIndex = name.lastIndexOf('.');
             String extension = name.substring(dotIndex);
+            if (extension.length() >= MAX_FILE_NAME_LENGTH) {
+                throw new InvalidFileTypeException(extension);
+            }
             name = name.substring(0, MAX_FILE_NAME_LENGTH - extension.length()) + extension;
         }
         return name;

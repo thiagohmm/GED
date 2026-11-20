@@ -1,6 +1,4 @@
 spring:
-  profiles:
-    default: dev
   datasource:
     url: jdbc:postgresql://${GED_DB_HOST:localhost}:${GED_DB_PORT:5432}/${GED_DB_NAME:ged}
     username: ${GED_DB_USER:ged}
@@ -21,7 +19,10 @@ server:
 
 ged:
   storage-dir: ${GED_STORAGE_DIR:storage}
+  cors:
+    allowed-origins: ${GED_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000}
   jwt:
+    secret: ${GED_JWT_SECRET:}
     expiration-minutes: ${GED_JWT_EXPIRATION_MINUTES:720}
   seed:
     enabled: false
@@ -29,6 +30,7 @@ ged:
     enabled: ${GED_ES_ENABLED:true}
     uris: ${GED_ES_URL:http://localhost:9200}
   editor:
+    jwt-secret: ${GED_EDITOR_JWT_SECRET:}
     document-server-url: ${GED_EDITOR_URL:http://localhost:8090}
     public-backend-url: ${GED_EDITOR_PUBLIC_BACKEND_URL:http://host.docker.internal:8080}
   backup:

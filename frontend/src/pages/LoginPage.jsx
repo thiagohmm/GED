@@ -81,7 +81,6 @@ export function LoginPage() {
         <button type="submit" className="btn btn-primary" disabled={submitting}>
           {submitting ? "Entrando..." : "Acessar o acervo"}
         </button>
-        <p className="muted small login-hint">Primeiro acesso: admin / admin123</p>
       </form>
     </div>
   );

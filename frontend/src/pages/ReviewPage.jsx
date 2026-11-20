@@ -17,7 +17,8 @@ export function ReviewPage() {
   const [diffError, setDiffError] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(location.state?.notice ?? "");
-  const [newComment, setNewComment] = useState("");
+  const [lineComment, setLineComment] = useState("");
+  const [generalComment, setGeneralComment] = useState("");
   const [quotedLine, setQuotedLine] = useState(null);
   const [summary, setSummary] = useState("");
 
@@ -50,17 +51,31 @@ export function ReviewPage() {
     review &&
     review.verdict === "PENDENTE" &&
     review.documentStatus === "EM_REVISAO" &&
-    (user.role === "REVISOR" || user.role === "ADMIN" || user.role === "SUPER_ADMIN");
+    (user?.role === "REVISOR" || user?.role === "ADMIN" || user?.role === "SUPER_ADMIN");
 
-  async function handleComment(event) {
+  async function handleLineComment(event) {
     event.preventDefault();
-    if (!newComment.trim()) {
+    if (!lineComment.trim() || !quotedLine) {
       return;
     }
     try {
-      await addReviewComment(id, newComment.trim(), quotedLine?.index, quotedLine?.content);
-      setNewComment("");
+      await addReviewComment(id, lineComment.trim(), quotedLine.index, quotedLine.content);
+      setLineComment("");
       setQuotedLine(null);
+      await load();
+    } catch (commentError) {
+      setError(apiErrorMessage(commentError));
+    }
+  }
+
+  async function handleGeneralComment(event) {
+    event.preventDefault();
+    if (!generalComment.trim()) {
+      return;
+    }
+    try {
+      await addReviewComment(id, generalComment.trim(), null, null);
+      setGeneralComment("");
       await load();
     } catch (commentError) {
       setError(apiErrorMessage(commentError));
@@ -136,16 +151,16 @@ export function ReviewPage() {
         <div className="panel-card">
           <h2>Novo comentário na linha {quotedLine.index + 1}</h2>
           <div className="quote-chip">"{quotedLine.content}"</div>
-          <form className="stacked-form" onSubmit={handleComment}>
+          <form className="stacked-form" onSubmit={handleLineComment}>
             <textarea
               rows={3}
-              value={newComment}
-              onChange={(event) => setNewComment(event.target.value)}
+              value={lineComment}
+              onChange={(event) => setLineComment(event.target.value)}
               placeholder="Escreva sua observação..."
             />
             <div className="inline-form">
-              <button type="submit" className="btn btn-primary" disabled={!newComment.trim()}>Comentar</button>
-              <button type="button" className="btn" onClick={() => setQuotedLine(null)}>Remover citação</button>
+              <button type="submit" className="btn btn-primary" disabled={!lineComment.trim()}>Comentar</button>
+              <button type="button" className="btn" onClick={() => { setQuotedLine(null); setLineComment(""); }}>Remover citação</button>
             </div>
           </form>
         </div>
@@ -169,15 +184,15 @@ export function ReviewPage() {
             ))}
           </ul>
         )}
-        <form className="stacked-form" onSubmit={handleComment}>
+        <form className="stacked-form" onSubmit={handleGeneralComment}>
           <textarea
             rows={2}
-            value={newComment}
-            onChange={(event) => setNewComment(event.target.value)}
+            value={generalComment}
+            onChange={(event) => setGeneralComment(event.target.value)}
             placeholder="Observação geral da revisão..."
           />
           <div className="inline-form">
-            <button type="submit" className="btn btn-primary" disabled={!newComment.trim()}>Comentar</button>
+            <button type="submit" className="btn btn-primary" disabled={!generalComment.trim()}>Comentar</button>
           </div>
         </form>
       </div>

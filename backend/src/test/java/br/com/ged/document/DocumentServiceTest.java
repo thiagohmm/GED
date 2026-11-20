@@ -440,6 +440,38 @@ class DocumentServiceTest {
         assertThrows(BusinessException.class, () -> documentService.diff(41L, null, null));
     }
 
+    @Test
+    void sanitizarNomeComExtensaoGiganteRejeitaSemLancarIndexOutOfBounds() {
+        String nomeMalicioso = "a." + "x".repeat(220);
+        MockMultipartFile arquivo = new MockMultipartFile("file", nomeMalicioso, "application/octet-stream", new byte[] {1, 2, 3, 4});
+
+        assertThrows(InvalidFileTypeException.class,
+                () -> documentService.upload(PASTA_ID, arquivo, null, "admin"));
+    }
+
+    @Test
+    void rejeitaArquivoFalsificadoComExtensaoDocxMasBytesInvalidos() {
+        when(documentRepository.findByFolderIdAndNameIgnoreCase(PASTA_ID, "falso.docx"))
+                .thenReturn(Optional.empty());
+        MockMultipartFile falsoDocx = new MockMultipartFile("file", "falso.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "<html>nao eh zip</html>".getBytes());
+
+        assertThrows(InvalidFileTypeException.class,
+                () -> documentService.upload(PASTA_ID, falsoDocx, null, "admin"));
+    }
+
+    @Test
+    void impedeExclusaoDeDocumentoProtocolado() {
+        Document protocolado = new Document(folder, "peticao.docx", DocumentKind.WORD, "admin");
+        protocolado.setId(77L);
+        protocolado.setStatus(DocumentStatus.PROTOCOLADO);
+        when(documentRepository.findById(77L)).thenReturn(Optional.of(protocolado));
+
+        assertThrows(ConflictException.class, () -> documentService.delete(77L));
+        verify(documentRepository, never()).delete(any(Document.class));
+    }
+
     private DocumentVersion versaoConTexto(Document document, int numero, String texto) {
         DocumentVersion version = new DocumentVersion(document, numero, "40/v" + numero + "-proposta.docx",
                 10, "abc", null, "admin");

@@ -20,6 +20,11 @@ public class NoopIndexingService implements SearchGateway {
     }
 
     @Override
+    public boolean needsReindex() {
+        return false;
+    }
+
+    @Override
     public void ensureIndex() {
     }
 

@@ -36,6 +36,12 @@ public class ReindexService {
             return false;
         }
         searchGateway.ensureIndex();
+        if (searchGateway.needsReindex()) {
+            log.info("Mapeamento do indice alterado; reconstruindo o indice de busca.");
+            searchGateway.clearIndex();
+            searchGateway.indexAll(documentVersionRepository.findAll(), this::folderPathOf);
+            return true;
+        }
         if (searchGateway.countVersions() > 0) {
             log.info("Indice de busca ja possui dados; reindexacao ignorada.");
             return false;

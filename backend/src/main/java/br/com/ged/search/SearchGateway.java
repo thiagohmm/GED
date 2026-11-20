@@ -13,6 +13,12 @@ public interface SearchGateway {
 
     boolean isAvailable();
 
+    /**
+     * true se o indice existe mas o mapeamento (analyzer) difere do atual, indicando
+     * reindexacao para aplicar a nova estrutura.
+     */
+    boolean needsReindex();
+
     void ensureIndex();
 
     long countVersions();

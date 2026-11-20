@@ -50,7 +50,7 @@ export function ReviewPage() {
     review &&
     review.verdict === "PENDENTE" &&
     review.documentStatus === "EM_REVISAO" &&
-    (user.role === "REVISOR" || user.role === "ADMIN");
+    (user.role === "REVISOR" || user.role === "ADMIN" || user.role === "SUPER_ADMIN");
 
   async function handleComment(event) {
     event.preventDefault();

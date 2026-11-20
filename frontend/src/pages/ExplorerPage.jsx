@@ -300,11 +300,6 @@ export function ExplorerPage() {
     if (!selectedFolder || !file) {
       return;
     }
-    const existing = documents.find((item) => item.name.toLocaleLowerCase() === file.name.toLocaleLowerCase());
-    if (existing && existing.status !== "EDITANDO") {
-      setError("Este documento não está em edição. Reabra o fluxo antes de enviar uma nova versão.");
-      return;
-    }
     setBusy(true);
     try {
       const stored = await uploadDocument(selectedFolder.id, file, changeDescription);
